@@ -14,7 +14,12 @@
     "type": "git",
     "url": "git+https://github.com/rudrankriyam/Clauduck.git"
   },
-  "keywords": ["github", "bot", "ai", "claude"],
+  "keywords": [
+    "github",
+    "bot",
+    "ai",
+    "claude"
+  ],
   "author": "Rudrank Riyam",
   "license": "ISC",
   "bugs": {
@@ -22,6 +27,7 @@
   },
   "homepage": "https://github.com/rudrankriyam/Clauduck#readme",
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^25.0.9",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"

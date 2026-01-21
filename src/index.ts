@@ -4,21 +4,15 @@
  * Entry point for the application
  */
 
-import { simpleQuery, getMiniMaxOptions } from "./agent/client";
+import { app } from "./server.js";
 
-async function main() {
-  console.log("=== Clauduck ===");
-  console.log("GitHub Bot with Claude Agent SDK\n");
+const PORT = process.env.PORT || 3000;
 
-  // Demo the basic structure
-  const result = await simpleQuery("Test prompt");
-  console.log(result);
-
-  console.log("\n=== MiniMax Configuration ===");
-  const options = getMiniMaxOptions();
-  console.log("ANTHROPIC_BASE_URL:", options.env?.ANTHROPIC_BASE_URL);
-  console.log("Allowed tools:", options.allowedTools);
-  console.log("Permission mode:", options.permissionMode);
-}
-
-main().catch(console.error);
+// Start the server
+app.listen(PORT, () => {
+  console.log(`=== Clauduck ===`);
+  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Webhook endpoint: http://localhost:${PORT}/webhook`);
+  console.log();
+  console.log("Ready to receive GitHub events!");
+});
