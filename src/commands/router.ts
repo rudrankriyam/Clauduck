@@ -6,7 +6,7 @@
 
 import { createOctokit } from "../github/client.js";
 import { executeQuery } from "../agent/client.js";
-import { parseCommand, getModeDescription } from "./parser.js";
+import { parseCommand } from "./parser.js";
 import type { ParsedCommand, GitHubContext } from "../utils/types.js";
 
 /**
@@ -43,13 +43,11 @@ async function handleReadCommand(
   context: GitHubContext,
   command: ParsedCommand
 ): Promise<string> {
-  const octokit = createOctokit(process.env.GITHUB_TOKEN || "");
-
   // Build context for the query
   const prompt = buildReadPrompt(context, command);
 
   try {
-    const result = await executeQuery(prompt, process.cwd());
+    const result = await executeQuery(prompt, "read");
     return result;
   } catch (error) {
     console.error("Error executing read command:", error);
@@ -64,13 +62,11 @@ async function handleWriteCommand(
   context: GitHubContext,
   command: ParsedCommand
 ): Promise<string> {
-  const octokit = createOctokit(process.env.GITHUB_TOKEN || "");
-
   // Build context for the query
   const prompt = buildWritePrompt(context, command);
 
   try {
-    const result = await executeQuery(prompt, process.cwd());
+    const result = await executeQuery(prompt, "write");
     return result;
   } catch (error) {
     console.error("Error executing write command:", error);
