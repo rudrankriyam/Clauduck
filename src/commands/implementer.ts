@@ -83,7 +83,14 @@ export async function implement(
     const prompt = buildImplementPrompt(context, command);
 
     // Execute implementation
-    const result = await executeQuery(prompt, "write", repoDir);
+    const result = await executeQuery(prompt, "write");
+    if (!result.success) {
+      return {
+        success: false,
+        error: result.error,
+        changesMade: false,
+      };
+    }
 
     // Check if there are changes to commit
     const hasChanges = checkForChanges(repoDir);
@@ -101,7 +108,7 @@ export async function implement(
         context.repo,
         branchName,
         context.issueNumber,
-        result,
+        result.result,
         defaultBranch
       );
 

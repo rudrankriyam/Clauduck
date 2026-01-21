@@ -1,32 +1,48 @@
 /**
- * Clauduck - Claude Agent SDK Integration
+ * Clauduck - Claude Agent SDK Integration (V2 Session API)
  *
- * Claude Agent SDK client configuration for MiniMax M2.1
+ * Uses unstable_v2_* session-based API for better multi-turn context
  */
 
-import { query, Options } from "@anthropic-ai/claude-agent-sdk";
-import type { CommandMode } from "../utils/types.js";
+import {
+  unstable_v2_createSession,
+  unstable_v2_resumeSession,
+  unstable_v2_prompt,
+} from "@anthropic-ai/claude-agent-sdk";
+import type { CommandMode, GitHubContext, AgentResponse } from "../utils/types.js";
 
 /**
- * Get Claude Agent SDK options configured for MiniMax
- *
- * Key insight: Setting ANTHROPIC_BASE_URL and ANTHROPIC_API_KEY
- * in the env object makes the SDK use MiniMax instead of Anthropic!
+ * Session key for tracking sessions per issue/PR
  */
-export function getMiniMaxOptions(mode: CommandMode = "read"): Options {
+function getSessionKey(context: GitHubContext): string {
+  return `${context.owner}/${context.repo}#${context.issueNumber}`;
+}
+
+// In-memory session storage (can be persisted to disk/db in production)
+interface SessionInfo {
+  sessionId: string;
+  context: GitHubContext;
+  createdAt: number;
+}
+const sessions = new Map<string, SessionInfo>();
+
+/**
+ * Get V2 session options configured for MiniMax
+ */
+function getSessionOptions(mode: CommandMode = "read") {
   // Tools based on mode - read mode has NO bash for security
   const allowedTools = mode === "write"
-    ? ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]  // Full access for implementation
-    : ["Read", "Grep", "Glob"];  // Read-only tools only
+    ? ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
+    : ["Read", "Grep", "Glob"];
 
   return {
+    model: "MiniMax-M2.1", // MiniMax should map this appropriately
     allowedTools,
-    permissionMode: "bypassPermissions",
+    permissionMode: "bypassPermissions" as const,
     env: {
       ANTHROPIC_BASE_URL: "https://api.minimax.io/anthropic",
       ANTHROPIC_API_KEY: process.env.MINIMAX_API_KEY || "",
     },
-    cwd: process.cwd(),
     systemPrompt: getSystemPrompt(mode),
     maxTurns: 50,
   };
@@ -63,48 +79,170 @@ Always:
 }
 
 /**
- * Execute a query with the Claude Agent SDK
+ * Execute a one-shot query using V2 API
  */
 export async function executeQuery(
   prompt: string,
-  mode: CommandMode = "read",
-  cwd?: string
-): Promise<string> {
-  const options = getMiniMaxOptions(mode);
+  mode: CommandMode = "read"
+): Promise<AgentResponse> {
+  const options = getSessionOptions(mode);
 
-  if (cwd) {
-    options.cwd = cwd;
-  }
+  try {
+    const result = await unstable_v2_prompt(prompt, {
+      ...options,
+      model: "MiniMax-M2.1", // MiniMax should map this appropriately
+    });
 
-  let result = "";
-
-  for await (const message of query({ prompt, options })) {
-    if ("result" in message) {
-      result = message.result;
+    if (result.subtype === "success") {
+      return {
+        success: true,
+        result: result.result,
+      };
+    } else {
+      return {
+        success: false,
+        result: "",
+        error: result.subtype,
+      };
     }
+  } catch (error) {
+    return {
+      success: false,
+      result: "",
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
   }
-
-  return result;
 }
 
 /**
- * Execute a query with streaming output
- * Yields chunks of the result as they become available
+ * Execute a session-based query with context
+ * Creates or resumes a session for the given GitHub context
  */
-export async function* executeQueryStreaming(
+export async function executeSessionQuery(
+  context: GitHubContext,
+  prompt: string,
+  mode: CommandMode = "read",
+  cwd?: string
+): Promise<AgentResponse> {
+  const sessionKey = getSessionKey(context);
+  const options = getSessionOptions(mode);
+
+  try {
+    const sessionInfo = sessions.get(sessionKey);
+
+    // Create or resume session
+    const session = sessionInfo
+      ? unstable_v2_resumeSession(sessionInfo.sessionId, options)
+      : unstable_v2_createSession(options);
+
+    await session.send(prompt);
+
+    let result = "";
+    let sessionId: string | undefined;
+
+    for await (const message of session.stream()) {
+      // Capture session ID for future resume
+      if (message.type === "system" && message.subtype === "init") {
+        sessionId = message.session_id;
+        sessions.set(sessionKey, {
+          sessionId,
+          context,
+          createdAt: Date.now(),
+        });
+      }
+
+      // Extract result
+      if (message.type === "assistant") {
+        const content = message.message.content;
+        if (typeof content === "string") {
+          result = content;
+        } else if (Array.isArray(content)) {
+          const textBlock = content.find((c): c is { type: "text"; text: string } =>
+            c.type === "text"
+          );
+          if (textBlock) {
+            result = textBlock.text;
+          }
+        }
+      }
+
+      // Get final result from result message
+      if (message.type === "result" && message.subtype === "success") {
+        result = message.result;
+      }
+    }
+
+    return {
+      success: true,
+      result,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      result: "",
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+/**
+ * Execute a streaming session query
+ */
+export async function* executeSessionStreaming(
+  context: GitHubContext,
   prompt: string,
   mode: CommandMode = "read",
   cwd?: string
 ): AsyncGenerator<string, void, unknown> {
-  const options = getMiniMaxOptions(mode);
+  const sessionKey = getSessionKey(context);
+  const options = getSessionOptions(mode);
 
-  if (cwd) {
-    options.cwd = cwd;
-  }
+  const sessionInfo = sessions.get(sessionKey);
+  const session = sessionInfo
+    ? unstable_v2_resumeSession(sessionInfo.sessionId, options)
+    : unstable_v2_createSession(options);
 
-  for await (const message of query({ prompt, options })) {
-    if ("result" in message) {
+  await session.send(prompt);
+
+  for await (const message of session.stream()) {
+    if (message.type === "assistant") {
+      const content = message.message.content;
+      if (typeof content === "string") {
+        yield content;
+      } else if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block.type === "text") {
+            yield block.text;
+          }
+        }
+      }
+    }
+
+    if (message.type === "result" && message.subtype === "success") {
       yield message.result;
     }
   }
+}
+
+/**
+ * Clear session for a GitHub context (start fresh)
+ */
+export function clearSession(context: GitHubContext): void {
+  const sessionKey = getSessionKey(context);
+  sessions.delete(sessionKey);
+}
+
+/**
+ * Get active session info for a context
+ */
+export function getSessionInfo(context: GitHubContext): SessionInfo | undefined {
+  const sessionKey = getSessionKey(context);
+  return sessions.get(sessionKey);
+}
+
+/**
+ * List all active sessions
+ */
+export function listSessions(): SessionInfo[] {
+  return Array.from(sessions.values());
 }

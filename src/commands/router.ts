@@ -48,7 +48,7 @@ async function handleReadCommand(
 
   try {
     const result = await executeQuery(prompt, "read");
-    return result;
+    return result.success ? result.result : `Error: ${result.error}`;
   } catch (error) {
     console.error("Error executing read command:", error);
     return "I encountered an error while processing your request.";
@@ -67,7 +67,7 @@ async function handleWriteCommand(
 
   try {
     const result = await executeQuery(prompt, "write");
-    return result;
+    return result.success ? result.result : `Error: ${result.error}`;
   } catch (error) {
     console.error("Error executing write command:", error);
     return "I encountered an error while processing your request.";
