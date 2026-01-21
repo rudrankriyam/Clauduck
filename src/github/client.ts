@@ -10,6 +10,9 @@ import { Octokit } from "@octokit/rest";
  * Create an Octokit client with a Personal Access Token
  */
 export function createOctokit(token: string): Octokit {
+  if (!token) {
+    throw new Error("GITHUB_TOKEN is required");
+  }
   return new Octokit({
     auth: token,
     userAgent: "Clauduck/1.0",
@@ -42,7 +45,7 @@ export async function createBranch(
   owner: string,
   repo: string,
   branchName: string,
-  sourceBranch: string = "main"
+  sourceBranch: string
 ): Promise<void> {
   const { data: refData } = await octokit.rest.git.getRef({
     owner,
@@ -66,7 +69,7 @@ export async function getFile(
   owner: string,
   repo: string,
   path: string,
-  branch: string = "main"
+  branch: string
 ): Promise<string | null> {
   try {
     const { data } = await octokit.rest.repos.getContent({
@@ -81,8 +84,8 @@ export async function getFile(
     }
 
     throw new Error("Unsupported content type");
-  } catch (error: any) {
-    if (error.status === 404) {
+  } catch (error) {
+    if (error instanceof Error && "status" in error && (error as any).status === 404) {
       return null;
     }
     throw error;
@@ -99,7 +102,7 @@ export async function createOrUpdateFile(
   path: string,
   content: string,
   message: string,
-  branch: string = "main",
+  branch: string,
   sha?: string
 ): Promise<void> {
   await octokit.rest.repos.createOrUpdateFileContents({
@@ -123,7 +126,7 @@ export async function createPullRequest(
   title: string,
   body: string,
   head: string,
-  base: string = "main"
+  base: string
 ): Promise<string> {
   const { data } = await octokit.rest.pulls.create({
     owner,
@@ -135,4 +138,19 @@ export async function createPullRequest(
   });
 
   return data.html_url;
+}
+
+/**
+ * Get the default branch of a repository
+ */
+export async function getDefaultBranch(
+  octokit: Octokit,
+  owner: string,
+  repo: string
+): Promise<string> {
+  const { data } = await octokit.rest.repos.get({
+    owner,
+    repo,
+  });
+  return data.default_branch || "main";
 }

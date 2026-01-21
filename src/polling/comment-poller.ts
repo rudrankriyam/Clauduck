@@ -37,9 +37,10 @@ export interface CommentInfo {
 }
 
 /**
- * Stop/cancel keywords
+ * Stop/cancel keywords - compiled regex with word boundaries
+ * Avoids false positives like "unstoppable" triggering "stop"
  */
-const STOP_KEYWORDS = ["stop", "cancel", "abort", "halt", "kill"];
+const STOP_KEYWORD_PATTERN = /\b(stop|cancel|abort|halt|kill)\b/i;
 
 /**
  * Poll for new comments since a checkpoint
@@ -50,7 +51,18 @@ export async function pollForComments(
   issueNumber: number,
   checkpoint: Checkpoint
 ): Promise<PollResult> {
-  const octokit = createOctokit(process.env.GITHUB_TOKEN || "");
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    console.error("GITHUB_TOKEN not configured");
+    return {
+      hasNewComments: false,
+      stopRequested: false,
+      newComments: [],
+      commentSummary: "",
+    };
+  }
+
+  const octokit = createOctokit(token);
 
   try {
     // Fetch all comments on the issue/PR
@@ -75,11 +87,9 @@ export async function pollForComments(
       return true;
     });
 
-    // Check for stop commands
+    // Check for stop commands using regex
     const stopRequested = newComments.some((comment) =>
-      STOP_KEYWORDS.some((keyword) =>
-        (comment.body || "").toLowerCase().includes(keyword)
-      )
+      STOP_KEYWORD_PATTERN.test(comment.body || "")
     );
 
     // Build comment summary
@@ -152,8 +162,7 @@ export async function pollWithInterval(
  * Check if a comment is a stop command
  */
 export function isStopCommand(commentBody: string): boolean {
-  const lower = commentBody.toLowerCase();
-  return STOP_KEYWORDS.some((keyword) => lower.includes(keyword));
+  return STOP_KEYWORD_PATTERN.test(commentBody);
 }
 
 /**

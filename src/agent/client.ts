@@ -14,10 +14,10 @@ import type { CommandMode } from "../utils/types.js";
  * in the env object makes the SDK use MiniMax instead of Anthropic!
  */
 export function getMiniMaxOptions(mode: CommandMode = "read"): Options {
-  // Tools based on mode
+  // Tools based on mode - read mode has NO bash for security
   const allowedTools = mode === "write"
-    ? ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
-    : ["Read", "Grep", "Glob", "Bash"];
+    ? ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]  // Full access for implementation
+    : ["Read", "Grep", "Glob"];  // Read-only tools only
 
   return {
     allowedTools,
@@ -43,7 +43,8 @@ function getSystemPrompt(mode: CommandMode): string {
 Your role is to analyze and explain code, issues, and pull requests.
 Be concise and helpful in your responses.
 When asked to summarize or review, provide clear, actionable insights.
-Always cite relevant code or files when making claims.`;
+Always cite relevant code or files when making claims.
+Do NOT execute any commands - only read and analyze.`;
 
     case "write":
       return `You are Clauduck, an AI contributor that helps implement changes.
