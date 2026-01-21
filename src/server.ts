@@ -2,6 +2,7 @@
  * Clauduck - GitHub Bot with Claude Agent SDK
  *
  * Express server with webhook handlers for GitHub events
+ * Uses GitHub App for per-repository installation tokens
  */
 
 import express, { Request, Response, NextFunction } from "express";
@@ -9,6 +10,13 @@ import crypto from "crypto";
 import dotenv from "dotenv";
 
 import { createOctokit, postComment } from "./github/client.js";
+import {
+  getGitHubAppConfig,
+  getAuthOctokit,
+  getInstallationId,
+  isGitHubAppConfigured,
+  checkPartialAppConfig,
+} from "./github/app.js";
 import { parseCommand } from "./commands/parser.js";
 import { executeSessionQuery, clearSession } from "./agent/client.js";
 import { GitHubContext, CommandMode } from "./utils/types.js";
@@ -17,23 +25,24 @@ dotenv.config();
 
 export const app = express();
 const PORT = process.env.PORT || 3000;
-const WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET || "";
 
 /**
  * Verify GitHub webhook signature (HMAC-SHA256)
- * Returns true only if signature is valid; false for missing/invalid signatures
  */
 function verifyWebhookSignature(
   payload: string,
   signature: string | undefined
 ): boolean {
+  // Determine which secret to use
+  const webhookSecret = process.env.GITHUB_APP_WEBHOOK_SECRET || process.env.GITHUB_WEBHOOK_SECRET || "";
+
   // In production, require webhook secret
-  if (!WEBHOOK_SECRET) {
-    if (process.env.NODE_ENV === "development") {
-      console.warn("Webhook secret not configured - skipping verification (development mode)");
+  if (!webhookSecret) {
+    if (process.env.ALLOW_UNVERIFIED_WEBHOOKS === "true") {
+      console.warn("Webhook secret not configured - skipping verification (ALLOW_UNVERIFIED_WEBHOOKS=true)");
       return true;
     }
-    console.error("Webhook secret not configured - refusing request in production");
+    console.error("Webhook secret not configured - refusing request. Set ALLOW_UNVERIFIED_WEBHOOKS=true to skip in development.");
     return false;
   }
 
@@ -43,11 +52,10 @@ function verifyWebhookSignature(
   }
 
   const expectedSignature = `sha256=${crypto
-    .createHmac("sha256", WEBHOOK_SECRET)
+    .createHmac("sha256", webhookSecret)
     .update(payload)
     .digest("hex")}`;
 
-  // Check length first to prevent timing attack via length mismatch
   if (signature.length !== expectedSignature.length) {
     console.error("Invalid signature length");
     return false;
@@ -104,26 +112,21 @@ function buildGitHubContext(
  */
 async function processCommand(
   context: GitHubContext,
-  commandText: string
+  commandText: string,
+  payload: any
 ): Promise<void> {
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) {
-    console.error("GITHUB_TOKEN not configured - cannot respond to user");
-    // Can't post comment without token, but webhook should still return 200
-    return;
-  }
-
-  // Post acknowledgment
-  const octokit = createOctokit(token);
-  await postComment(
-    octokit,
-    context.owner,
-    context.repo,
-    context.issueNumber,
-    "🤖 Clauduck is processing your request..."
-  );
+  const { octokit } = await getAuthOctokit(payload);
 
   try {
+    // Post acknowledgment
+    await postComment(
+      octokit,
+      context.owner,
+      context.repo,
+      context.issueNumber,
+      "🤖 Clauduck is processing your request..."
+    );
+
     // Parse command
     const parsed = parseCommand(commandText);
     if (!parsed) {
@@ -141,16 +144,9 @@ async function processCommand(
     const prompt = buildPrompt(context, parsed);
 
     // Execute based on mode
-    const cwd = parsed.mode === "write" ? `/tmp/clauduck-repos` : undefined;
-    const result = await executeSessionQuery(
-      context,
-      prompt,
-      parsed.mode,
-      cwd
-    );
+    const result = await executeSessionQuery(context, prompt, parsed.mode);
 
     if (result.success) {
-      // Format result for GitHub (use details for long responses)
       const response = formatResponse(context, parsed, result.result);
       await postComment(
         octokit,
@@ -170,13 +166,37 @@ async function processCommand(
     }
   } catch (error) {
     console.error("Command processing error:", error);
+    try {
+      await postComment(
+        octokit,
+        context.owner,
+        context.repo,
+        context.issueNumber,
+        `❌ Error processing command: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
+    } catch {
+      console.error("Failed to post error comment");
+    }
+  }
+}
+
+/**
+ * Handle stop/cancel commands
+ */
+async function handleStopCommand(context: GitHubContext, payload: any): Promise<void> {
+  clearSession(context);
+
+  try {
+    const { octokit } = await getAuthOctokit(payload);
     await postComment(
       octokit,
       context.owner,
       context.repo,
       context.issueNumber,
-      `❌ Error processing command: ${error instanceof Error ? error.message : "Unknown error"}`
+      "🛑 Stopped. Session cleared."
     );
+  } catch (error) {
+    console.error("Failed to post stop confirmation:", error);
   }
 }
 
@@ -268,27 +288,7 @@ function formatResponse(
 }
 
 /**
- * Handle stop/cancel commands
- */
-async function handleStopCommand(context: GitHubContext): Promise<void> {
-  clearSession(context);
-
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) return;
-
-  const octokit = createOctokit(token);
-  await postComment(
-    octokit,
-    context.owner,
-    context.repo,
-    context.issueNumber,
-    "🛑 Stopped. Session cleared."
-  );
-}
-
-/**
  * Raw body parser for webhook signature verification
- * IMPORTANT: Must come BEFORE express.json() for webhook events
  */
 app.use("/webhook", express.raw({ type: "application/json" }));
 
@@ -305,34 +305,27 @@ app.get("/", (_req: Request, res: Response) => {
     name: "Clauduck",
     status: "running",
     version: "1.0.0",
+    githubApp: isGitHubAppConfigured(),
   });
 });
 
 /**
  * Webhook endpoint - receives GitHub events
- *
- * Events we care about:
- * - issue_comment.created (when someone mentions @clauduck)
- * - issues.opened (new issues - we can auto-greet)
- * - pull_request.opened (new PRs)
  */
 app.post("/webhook", async (req: Request, res: Response) => {
   try {
     const signature = req.headers["x-hub-signature-256"];
     const event = req.headers["x-github-event"];
 
-    // Handle headers as strings
     const signatureStr = Array.isArray(signature) ? signature[0] : signature;
     const eventStr = Array.isArray(event) ? event[0] : event;
 
-    // Verify signature
     const payloadString = req.body.toString();
     if (!verifyWebhookSignature(payloadString, signatureStr)) {
       res.status(401).json({ error: "Invalid signature" });
       return;
     }
 
-    // Parse payload with error handling
     const parseResult = parseWebhookPayload(payloadString);
     if (!parseResult.success) {
       res.status(400).json({ error: "Invalid payload" });
@@ -346,11 +339,11 @@ app.post("/webhook", async (req: Request, res: Response) => {
       pull_request?: { number: number; title?: string };
       repository?: { full_name: string; name: string; owner: { login: string } };
       sender?: { type: string };
+      installation?: { id: number };
     };
 
     console.log(`Received event: ${eventStr}`);
 
-    // Only process created/opened events, not edits/closed
     if (payload.action && !["created", "opened"].includes(payload.action)) {
       res.status(200).json({ status: "ignored" });
       return;
@@ -379,18 +372,17 @@ app.post("/webhook", async (req: Request, res: Response) => {
 
 /**
  * Handle new issue comments
- * Look for @clauduck mentions
  */
 async function handleIssueComment(payload: {
   comment?: { body: string; id: number };
   issue?: { number: number };
   repository?: { full_name: string; name: string; owner: { login: string } };
   sender?: { type: string };
+  installation?: { id: number };
 }) {
   const { comment, issue, repository, sender } = payload;
   if (!comment || !issue || !repository || !sender) return;
 
-  // Skip if bot
   if (sender.type === "Bot") {
     console.log("Skipping bot comment");
     return;
@@ -404,21 +396,18 @@ async function handleIssueComment(payload: {
     comment.id
   );
 
-  // Check for @clauduck mention (case-insensitive, handle [bot])
   const mentionPattern = /@clauduck(\[[a-z]+\])?/gi;
   if (mentionPattern.test(comment.body)) {
     console.log(`Found @clauduck mention in issue #${issue.number}`);
 
-    // Extract command (remove mention)
     const commandText = comment.body.replace(mentionPattern, "").trim();
 
-    // Check for stop/cancel after @clauduck mention
     if (/\b(stop|cancel|abort|halt)\b/i.test(commandText)) {
-      await handleStopCommand(context);
+      await handleStopCommand(context, payload);
       return;
     }
 
-    await processCommand(context, commandText);
+    await processCommand(context, commandText, payload);
   }
 }
 
@@ -430,20 +419,17 @@ async function handleIssueOpened(payload: {
   issue?: { number: number; title?: string };
   repository?: { full_name: string; name: string; owner: { login: string } };
   sender?: { type: string };
+  installation?: { id: number };
 }) {
   const { issue, repository, sender } = payload;
   if (!issue || !repository || !sender) return;
 
-  // Skip if bot and if not a new issue
   if (sender.type === "Bot" || payload.action !== "opened") return;
 
   console.log(`New issue #${issue.number} in ${repository.full_name}`);
 
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) return;
-
   try {
-    const octokit = createOctokit(token);
+    const { octokit } = await getAuthOctokit(payload);
     await postComment(
       octokit,
       repository.owner.login,
@@ -472,20 +458,17 @@ async function handlePROpened(payload: {
   pull_request?: { number: number; title?: string };
   repository?: { full_name: string; name: string; owner: { login: string } };
   sender?: { type: string };
+  installation?: { id: number };
 }) {
   const { pull_request, repository, sender } = payload;
   if (!pull_request || !repository || !sender) return;
 
-  // Skip if bot and if not a new PR
   if (sender.type === "Bot" || payload.action !== "opened") return;
 
   console.log(`New PR #${pull_request.number} in ${repository.full_name}`);
 
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) return;
-
   try {
-    const octokit = createOctokit(token);
+    const { octokit } = await getAuthOctokit(payload);
     await postComment(
       octokit,
       repository.owner.login,
@@ -509,14 +492,21 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 /**
- * Start the server (call this from index.ts)
+ * Start the server
  */
 export function startServer(): void {
+  // Log partial config warning if applicable
+  const partialWarning = checkPartialAppConfig();
+  if (partialWarning) {
+    console.warn(partialWarning);
+  }
+
   const port = parseInt(PORT.toString(), 10);
   app.listen(port, () => {
     console.log(`=== Clauduck ===`);
     console.log(`Server running on http://localhost:${port}`);
     console.log(`Webhook endpoint: http://localhost:${port}/webhook`);
+    console.log(`GitHub App: ${isGitHubAppConfigured() ? "configured" : "not configured (using PAT)"}`);
     console.log();
     console.log("Ready to receive GitHub events!");
   });

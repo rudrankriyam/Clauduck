@@ -72,22 +72,30 @@ Sessions are stored in-memory per `${owner}/${repo}#${issueNumber}`. Use `clearS
 
 Required environment variables:
 - `MINIMAX_API_KEY` - MiniMax API key (Anthropic-compatible endpoint)
-- `GITHUB_TOKEN` - GitHub PAT or App installation token
-- `GITHUB_WEBHOOK_SECRET` - Webhook signature secret (production)
+- `GITHUB_APP_ID` - GitHub App ID (required for GitHub App mode)
+- `GITHUB_APP_PRIVATE_KEY` - GitHub App private key (PEM format, newlines escaped)
+- `GITHUB_APP_WEBHOOK_SECRET` - GitHub App webhook secret
 - `PORT` - Server port (default: 3000)
 - `NODE_ENV` - Set to "development" to skip webhook verification (not recommended for production)
+
+**Fallback (PAT mode):** If GitHub App env vars are not set, falls back to:
+- `GITHUB_TOKEN` - GitHub PAT (simpler but broader permissions)
 
 MiniMax endpoint: `https://api.minimax.io/anthropic`
 Model: `MiniMax-M2.1`
 
-### GitHub App vs PAT
+### GitHub App Setup
 
-Currently uses PAT for simplicity. For production with broader repo access, consider:
-- GitHub App with installation tokens for per-repo permissions
-- Enforce `payload.installation` for authentication
-- Add repo/org allowlist in configuration
+1. Create a GitHub App at https://github.com/settings/apps
+2. Set webhook URL to your server's `/webhook` endpoint
+3. Subscribe to events: `issues`, `pull_request`, `issue_comment`
+4. Generate a private key and set `GITHUB_APP_PRIVATE_KEY` (escape newlines as `\\n`)
+5. Install the app on target repositories
 
-Using PAT with webhook secret provides reasonable security for personal use.
+Benefits of GitHub App:
+- Per-repository installation tokens (principle of least privilege)
+- Webhook signature verification with dedicated secret
+- More granular permissions than PAT
 
 ### Git Conventions
 
