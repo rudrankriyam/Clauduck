@@ -111,7 +111,7 @@ export async function getFile(
     throw new Error("Unsupported content type");
   } catch (error) {
     const typedError = error as Error & { status?: number };
-    if (typedError instanceof Error && "status" in typedError && typedError.status === 404) {
+    if (typedError instanceof Error && typedError.status === 404) {
       return null;
     }
     throw error;

@@ -41,8 +41,12 @@ export class SessionStore {
 
   initStorage(): void {
     if (!existsSync(this.dir)) {
-      mkdirSync(this.dir, { recursive: true });
-      chmodSync(this.dir, 0o700);
+      try {
+        mkdirSync(this.dir, { recursive: true });
+        chmodSync(this.dir, 0o700);
+      } catch {
+        this.logger.error(`Failed to create or chmod session directory: ${this.dir}`);
+      }
     }
   }
 
