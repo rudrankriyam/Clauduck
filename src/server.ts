@@ -262,7 +262,7 @@ async function processCommand(
       context.owner,
       context.repo,
       context.issueNumber,
-      "🤖 Clauduck is processing your request..."
+      "Clauduck is processing your request..."
     );
 
     // Parse command
@@ -273,7 +273,7 @@ async function processCommand(
         context.owner,
         context.repo,
         context.issueNumber,
-        "❓ I couldn't parse your command. Try `@clauduck help` for available commands."
+        "I couldn't parse your command. Try `@clauduck help` for available commands."
       );
       return;
     }
@@ -299,7 +299,7 @@ async function processCommand(
         context.owner,
         context.repo,
         context.issueNumber,
-        `❌ Error: ${result.error || "Unknown error"}`
+        `Error: ${result.error || "Unknown error"}`
       );
     }
   } catch (error) {
@@ -311,7 +311,7 @@ async function processCommand(
           context.owner,
           context.repo,
           context.issueNumber,
-          `❌ Error processing command: ${error instanceof Error ? error.message : "Unknown error"}`
+          `Error processing command: ${error instanceof Error ? error.message : "Unknown error"}`
         );
       } catch {
         console.error("Failed to post error comment");
@@ -336,7 +336,7 @@ async function handleStopCommand(context: GitHubContext, payload: GitHubWebhookP
       context.owner,
       context.repo,
       context.issueNumber,
-      "🛑 Stopped. Session cleared."
+      "Stopped. Session cleared."
     );
   } catch (error) {
     console.error("Failed to post stop confirmation:", error);
@@ -425,7 +425,7 @@ function formatResponse(
 ): string {
   const header = `## Clauduck Response\n\n**Command:** @clauduck ${parsed.action} ${parsed.target}\n\n`;
   const truncated = result.length > 15000 ? result.slice(0, 15000) + "\n\n_(truncated)_" : result;
-  const footer = `\n---\n*🤖 Powered by MiniMax M2.1*`;
+  const footer = `\n---\n*Powered by MiniMax M2.1*`;
 
   return header + truncated + footer;
 }
@@ -565,7 +565,7 @@ async function handleIssueOpened(payload: {
       repository.owner.login,
       repository.name,
       issue.number,
-      `👋 Hi! I'm Clauduck, an AI assistant for this repository.
+      `Hi! I'm Clauduck, an AI assistant for this repository.
 
 I can help you with:
 - **Summarize**: Explain the codebase or specific files
@@ -604,7 +604,7 @@ async function handlePROpened(payload: {
       repository.owner.login,
       repository.name,
       pull_request.number,
-      `👋 Hi! I'm Clauduck, an AI assistant for this repository.
+      `Hi! I'm Clauduck, an AI assistant for this repository.
 
 I can help you review this PR. Just @mention me with \`@clauduck review\` and I'll analyze the changes.`
     );
