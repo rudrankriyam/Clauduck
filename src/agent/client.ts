@@ -20,11 +20,6 @@ import { SessionStore, type SessionInfo } from "./session-store.js";
 const SESSION_DIR = process.env.SESSION_DIR || "/tmp/clauduck-sessions";
 
 /**
- * Allowed directory for git operations (restrict Bash to this)
- */
-const ALLOWED_REPO_DIR = process.env.REPO_DIR || "/tmp/clauduck-repos";
-
-/**
  * Session key for tracking sessions per issue/PR
  */
 function getSessionKey(context: GitHubContext): string {
@@ -61,9 +56,8 @@ export function shutdown(): void {
  * Get V2 session options configured for MiniMax
  */
 function getSessionOptions(mode: CommandMode = "read") {
-  // Tools based on mode
+  // Bash available in write mode only
   const hasBash = mode === "write";
-  const extraTools = hasBash ? ["Write", "Edit"] : [];
 
   return {
     model: "MiniMax-M2.1",
@@ -213,19 +207,23 @@ export async function executeSessionQuery(
 
     for await (const message of session.stream()) {
       messageCount++;
-      console.log(`[AGENT] Message ${messageCount}: type=${message.type}, subtype=${message.subtype}`);
+      const subtype = "subtype" in message ? (message as { subtype: string }).subtype : "none";
+      console.log(`[AGENT] Message ${messageCount}: type=${message.type}, subtype=${subtype}`);
 
       // Capture session ID for future resume
-      if (message.type === "system" && message.subtype === "init") {
-        sessionId = message.session_id;
-        console.log(`[AGENT] Session ID: ${sessionId}`);
-        const sessionData = {
-          sessionId,
-          context,
-          createdAt: Date.now(),
-        };
-        sessionStore.saveSession(sessionKey, sessionData);
-        console.log(`[AGENT] Session saved`);
+      if (message.type === "system") {
+        const sysMsg = message as { subtype: string; session_id: string };
+        if (sysMsg.subtype === "init") {
+          sessionId = sysMsg.session_id;
+          console.log(`[AGENT] Session ID: ${sessionId}`);
+          const sessionData = {
+            sessionId,
+            context,
+            createdAt: Date.now(),
+          };
+          sessionStore.saveSession(sessionKey, sessionData);
+          console.log(`[AGENT] Session saved`);
+        }
       }
 
       // Extract result
