@@ -8,7 +8,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import dotenv from "dotenv";
 
-import { postComment } from "./github/client.js";
+import { postComment, isCollaborator, isOwner } from "./github/client.js";
 import {
   getAuthOctokit,
   isGitHubAppConfigured,
@@ -409,7 +409,7 @@ async function handleIssueComment(payload: {
   comment?: { body: string; id: number };
   issue?: { number: number };
   repository?: { full_name: string; name: string; owner: { login: string } };
-  sender?: { type: string };
+  sender?: { type: string; login?: string };
   installation?: { id: number };
 }) {
   const { comment, issue, repository, sender } = payload;
@@ -417,6 +417,28 @@ async function handleIssueComment(payload: {
 
   if (sender.type === "Bot") {
     console.log("Skipping bot comment");
+    return;
+  }
+
+  // Check comment size limit (10KB max)
+  const MAX_COMMENT_SIZE = 10 * 1024;
+  if (comment.body.length > MAX_COMMENT_SIZE) {
+    console.log(`Comment too large (${comment.body.length} bytes), skipping`);
+    return;
+  }
+
+  // Check if sender is owner or collaborator
+  const senderLogin = sender.login;
+  if (!senderLogin) {
+    console.log("Skipping comment with unknown sender");
+    return;
+  }
+
+  const { octokit } = await getAuthOctokit(payload);
+  const repoOwner = repository.owner.login;
+
+  if (!isOwner(repoOwner, senderLogin) && !(await isCollaborator(octokit, repoOwner, repository.name, senderLogin))) {
+    console.log(`Skipping non-collaborator @${senderLogin}`);
     return;
   }
 

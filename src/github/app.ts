@@ -50,7 +50,7 @@ export async function getInstallationOctokit(
 }
 
 /**
- * Get authenticated Octokit for installation (from app or PAT fallback)
+ * Get authenticated Octokit for installation (GitHub App required)
  */
 export async function getAuthOctokit(
   payload: GitHubWebhookPayload
@@ -58,25 +58,22 @@ export async function getAuthOctokit(
   const installationId = getInstallationId(payload);
   const appConfig = getGitHubAppConfig();
 
-  // If App is configured, require installationId (fail closed)
-  if (appConfig) {
-    if (!installationId) {
-      throw new Error(
-        "GitHub App is configured but no installation found in webhook payload. " +
-        "Refusing to fall back to PAT for security. Install the app on the repository."
-      );
-    }
-    const app = createApp(appConfig);
-    const octokit = await getInstallationOctokit(app, installationId);
-    return { octokit, installationId };
+  if (!appConfig) {
+    throw new Error(
+      "GitHub App not configured. Set GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, and GITHUB_APP_WEBHOOK_SECRET. " +
+      "PAT mode is not supported."
+    );
   }
 
-  // No App config - fall back to PAT
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) {
-    throw new Error("Neither GitHub App nor GITHUB_TOKEN configured");
+  if (!installationId) {
+    throw new Error(
+      "No installation found in webhook payload. Install the GitHub App on the repository."
+    );
   }
-  return { octokit: createOctokit(token), installationId };
+
+  const app = createApp(appConfig);
+  const octokit = await getInstallationOctokit(app, installationId);
+  return { octokit, installationId };
 }
 
 /**

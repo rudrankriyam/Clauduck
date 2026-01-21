@@ -204,3 +204,31 @@ export function getRateLimitStatus() {
 export function resetRateLimiter() {
   rateLimiter.reset();
 }
+
+/**
+ * Check if a user is a collaborator on a repository
+ */
+export async function isCollaborator(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  username: string
+): Promise<boolean> {
+  try {
+    await octokit.repos.checkCollaborator({
+      owner,
+      repo,
+      username,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if a user is the repository owner
+ */
+export function isOwner(owner: string, username: string): boolean {
+  return owner === username;
+}
