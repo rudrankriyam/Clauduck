@@ -2,6 +2,7 @@
  * Clauduck - Claude Agent SDK Integration (V2 Session API)
  *
  * Uses unstable_v2_* session-based API for better multi-turn context
+ * Sessions are persisted to disk for recovery after restart
  */
 
 import {
@@ -9,7 +10,14 @@ import {
   unstable_v2_resumeSession,
   unstable_v2_prompt,
 } from "@anthropic-ai/claude-agent-sdk";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, readdirSync } from "fs";
+import { join } from "path";
 import type { CommandMode, GitHubContext, AgentResponse } from "../utils/types.js";
+
+/**
+ * Session storage directory
+ */
+const SESSION_DIR = process.env.SESSION_DIR || "/tmp/clauduck-sessions";
 
 /**
  * Session key for tracking sessions per issue/PR
@@ -21,13 +29,67 @@ function getSessionKey(context: GitHubContext): string {
 // Session TTL: 24 hours (prevents unbounded memory growth)
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
-// In-memory session storage (can be persisted to disk/db in production)
+// In-memory session storage
 interface SessionInfo {
   sessionId: string;
   context: GitHubContext;
   createdAt: number;
 }
 const sessions = new Map<string, SessionInfo>();
+
+/**
+ * Initialize session storage directory
+ */
+function initSessionStorage(): void {
+  if (!existsSync(SESSION_DIR)) {
+    mkdirSync(SESSION_DIR, { recursive: true });
+  }
+}
+
+/**
+ * Persist session to disk
+ */
+function persistSession(key: string, session: SessionInfo): void {
+  try {
+    const filePath = join(SESSION_DIR, `${Buffer.from(key).toString("base64")}.json`);
+    writeFileSync(filePath, JSON.stringify(session, null, 2));
+  } catch (error) {
+    console.error(`Failed to persist session ${key}:`, error);
+  }
+}
+
+/**
+ * Load all persisted sessions on startup
+ */
+function loadAllPersistedSessions(): void {
+  initSessionStorage();
+  try {
+    const files = readdirSync(SESSION_DIR);
+    let loaded = 0;
+    for (const file of files) {
+      if (file.endsWith(".json")) {
+        try {
+          const data = JSON.parse(readFileSync(join(SESSION_DIR, file), "utf-8"));
+          if (Date.now() - data.createdAt <= SESSION_TTL_MS) {
+            const key = Buffer.from(file.replace(".json", ""), "base64").toString();
+            sessions.set(key, data);
+            loaded++;
+          }
+        } catch {
+          // Skip corrupted files
+        }
+      }
+    }
+    if (loaded > 0) {
+      console.log(`Loaded ${loaded} persisted sessions`);
+    }
+  } catch (error) {
+    console.error("Failed to load persisted sessions:", error);
+  }
+}
+
+// Load persisted sessions on module load
+loadAllPersistedSessions();
 
 /**
  * Clean up expired sessions (runs periodically)
@@ -37,6 +99,13 @@ function cleanupExpiredSessions(): void {
   for (const [key, session] of sessions.entries()) {
     if (now - session.createdAt > SESSION_TTL_MS) {
       sessions.delete(key);
+      // Also delete persisted file
+      try {
+        const filePath = join(SESSION_DIR, `${Buffer.from(key).toString("base64")}.json`);
+        unlinkSync(filePath);
+      } catch {
+        // Ignore cleanup errors
+      }
       console.log(`Cleaned up expired session: ${key}`);
     }
   }
@@ -141,7 +210,7 @@ export async function executeSessionQuery(
   context: GitHubContext,
   prompt: string,
   mode: CommandMode = "read",
-  cwd?: string
+  _cwd?: string
 ): Promise<AgentResponse> {
   const sessionKey = getSessionKey(context);
   const options = getSessionOptions(mode);
@@ -163,11 +232,13 @@ export async function executeSessionQuery(
       // Capture session ID for future resume
       if (message.type === "system" && message.subtype === "init") {
         sessionId = message.session_id;
-        sessions.set(sessionKey, {
+        const sessionData = {
           sessionId,
           context,
           createdAt: Date.now(),
-        });
+        };
+        sessions.set(sessionKey, sessionData);
+        persistSession(sessionKey, sessionData); // Persist to disk
       }
 
       // Extract result
@@ -220,7 +291,7 @@ export async function* executeSessionStreaming(
   context: GitHubContext,
   prompt: string,
   mode: CommandMode = "read",
-  cwd?: string
+  _cwd?: string
 ): AsyncGenerator<string, void, unknown> {
   const sessionKey = getSessionKey(context);
   const options = getSessionOptions(mode);
@@ -263,6 +334,13 @@ export async function* executeSessionStreaming(
 export function clearSession(context: GitHubContext): void {
   const sessionKey = getSessionKey(context);
   sessions.delete(sessionKey);
+  // Remove persisted file
+  try {
+    const filePath = join(SESSION_DIR, `${Buffer.from(sessionKey).toString("base64")}.json`);
+    unlinkSync(filePath);
+  } catch {
+    // Ignore cleanup errors
+  }
 }
 
 /**

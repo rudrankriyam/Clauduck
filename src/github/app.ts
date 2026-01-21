@@ -6,7 +6,7 @@
 
 import { App } from "@octokit/app";
 import { Octokit } from "@octokit/rest";
-import crypto from "crypto";
+import type { GitHubWebhookPayload } from "../utils/types.js";
 
 /**
  * Import createOctokit from client (avoid circular import)
@@ -53,7 +53,7 @@ export async function getInstallationOctokit(
  * Get authenticated Octokit for installation (from app or PAT fallback)
  */
 export async function getAuthOctokit(
-  payload: any
+  payload: GitHubWebhookPayload
 ): Promise<{ octokit: Octokit; installationId: number | null }> {
   const installationId = getInstallationId(payload);
   const appConfig = getGitHubAppConfig();
@@ -82,14 +82,14 @@ export async function getAuthOctokit(
 /**
  * Get installation ID from webhook payload
  */
-export function getInstallationId(payload: any): number | null {
+export function getInstallationId(payload: GitHubWebhookPayload): number | null {
   return payload.installation?.id || null;
 }
 
 /**
  * Check if the app is installed on the repository
  */
-export function isInstalled(payload: any): boolean {
+export function isInstalled(payload: GitHubWebhookPayload): boolean {
   return !!payload.installation;
 }
 

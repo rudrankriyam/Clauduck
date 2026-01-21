@@ -1,10 +1,12 @@
 /**
  * Clauduck - GitHub API Client
  *
- * Octokit-based client for GitHub API operations
+ * Octokit-based client for GitHub API operations with rate limiting
  */
 
 import { Octokit } from "@octokit/rest";
+import { rateLimiter } from "./rate-limiter.js";
+import type { GitHubApiHeaders } from "../utils/types.js";
 
 /**
  * Create an Octokit client with a Personal Access Token
@@ -20,7 +22,7 @@ export function createOctokit(token: string): Octokit {
 }
 
 /**
- * Post a comment on an issue or PR
+ * Post a comment on an issue or PR (rate-limited)
  */
 export async function postComment(
   octokit: Octokit,
@@ -29,16 +31,22 @@ export async function postComment(
   issueNumber: number,
   body: string
 ): Promise<void> {
-  await octokit.rest.issues.createComment({
-    owner,
-    repo,
-    issue_number: issueNumber,
-    body,
+  await rateLimiter.executeWithRetry(async () => {
+    const response = await octokit.rest.issues.createComment({
+      owner,
+      repo,
+      issue_number: issueNumber,
+      body,
+    });
+    return {
+      data: response.data,
+      headers: response.headers as unknown as GitHubApiHeaders,
+    };
   });
 }
 
 /**
- * Create a branch
+ * Create a branch (rate-limited)
  */
 export async function createBranch(
   octokit: Octokit,
@@ -47,22 +55,26 @@ export async function createBranch(
   branchName: string,
   sourceBranch: string
 ): Promise<void> {
-  const { data: refData } = await octokit.rest.git.getRef({
-    owner,
-    repo,
-    ref: `heads/${sourceBranch}`,
-  });
+  await rateLimiter.executeWithRetry(async () => {
+    const refData = await octokit.rest.git.getRef({
+      owner,
+      repo,
+      ref: `heads/${sourceBranch}`,
+    });
 
-  await octokit.rest.git.createRef({
-    owner,
-    repo,
-    ref: `refs/heads/${branchName}`,
-    sha: refData.object.sha,
+    await octokit.rest.git.createRef({
+      owner,
+      repo,
+      ref: `refs/heads/${branchName}`,
+      sha: refData.data.object.sha,
+    });
+
+    return { data: {}, headers: {} };
   });
 }
 
 /**
- * Get file contents
+ * Get file contents (rate-limited)
  */
 export async function getFile(
   octokit: Octokit,
@@ -72,20 +84,24 @@ export async function getFile(
   branch: string
 ): Promise<string | null> {
   try {
-    const { data } = await octokit.rest.repos.getContent({
-      owner,
-      repo,
-      path,
-      ref: branch,
-    });
+    const response = await rateLimiter.executeWithRetry(async () => {
+      const result = await octokit.rest.repos.getContent({
+        owner,
+        repo,
+        path,
+        ref: branch,
+      });
+      return { data: result.data, headers: result.headers as unknown as GitHubApiHeaders };
+    }) as { content: string; encoding: string };
 
-    if ("content" in data && data.encoding === "base64") {
-      return Buffer.from(data.content, "base64").toString("utf-8");
+    if ("content" in response && response.encoding === "base64") {
+      return Buffer.from(response.content, "base64").toString("utf-8");
     }
 
     throw new Error("Unsupported content type");
   } catch (error) {
-    if (error instanceof Error && "status" in error && (error as any).status === 404) {
+    const typedError = error as Error & { status?: number };
+    if (typedError instanceof Error && "status" in typedError && typedError.status === 404) {
       return null;
     }
     throw error;
@@ -93,7 +109,7 @@ export async function getFile(
 }
 
 /**
- * Create or update a file
+ * Create or update a file (rate-limited)
  */
 export async function createOrUpdateFile(
   octokit: Octokit,
@@ -105,19 +121,22 @@ export async function createOrUpdateFile(
   branch: string,
   sha?: string
 ): Promise<void> {
-  await octokit.rest.repos.createOrUpdateFileContents({
-    owner,
-    repo,
-    path,
-    message,
-    content: Buffer.from(content).toString("base64"),
-    branch,
-    sha,
+  await rateLimiter.executeWithRetry(async () => {
+    const response = await octokit.rest.repos.createOrUpdateFileContents({
+      owner,
+      repo,
+      path,
+      message,
+      content: Buffer.from(content).toString("base64"),
+      branch,
+      sha,
+    });
+    return { data: response.data, headers: response.headers as unknown as GitHubApiHeaders };
   });
 }
 
 /**
- * Create a pull request
+ * Create a pull request (rate-limited)
  */
 export async function createPullRequest(
   octokit: Octokit,
@@ -128,29 +147,50 @@ export async function createPullRequest(
   head: string,
   base: string
 ): Promise<string> {
-  const { data } = await octokit.rest.pulls.create({
-    owner,
-    repo,
-    title,
-    body,
-    head,
-    base,
-  });
+  const response = await rateLimiter.executeWithRetry(async () => {
+    const result = await octokit.rest.pulls.create({
+      owner,
+      repo,
+      title,
+      body,
+      head,
+      base,
+    });
+    return { data: result.data, headers: result.headers as unknown as GitHubApiHeaders };
+  }) as { html_url: string };
 
-  return data.html_url;
+  return response.html_url;
 }
 
 /**
- * Get the default branch of a repository
+ * Get the default branch of a repository (rate-limited)
  */
 export async function getDefaultBranch(
   octokit: Octokit,
   owner: string,
   repo: string
 ): Promise<string> {
-  const { data } = await octokit.rest.repos.get({
-    owner,
-    repo,
-  });
-  return data.default_branch || "main";
+  const response = await rateLimiter.executeWithRetry(async () => {
+    const result = await octokit.rest.repos.get({
+      owner,
+      repo,
+    });
+    return { data: result.data, headers: result.headers as unknown as GitHubApiHeaders };
+  }) as { default_branch: string };
+
+  return response.default_branch || "main";
+}
+
+/**
+ * Get rate limiter status for monitoring
+ */
+export function getRateLimitStatus() {
+  return rateLimiter.getStatus();
+}
+
+/**
+ * Reset rate limiter (useful for new installations)
+ */
+export function resetRateLimiter() {
+  rateLimiter.reset();
 }

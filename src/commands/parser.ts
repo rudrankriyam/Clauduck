@@ -48,7 +48,7 @@ const WRITE_COMMANDS = [
  */
 export function parseCommand(commentBody: string): ParsedCommand | null {
   // Remove @clauduck mention (with or without [bot])
-  let command = commentBody
+  const command = commentBody
     .replace(/@clauduck(\[bot\])?/gi, "")
     .trim();
 

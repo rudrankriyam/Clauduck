@@ -8,7 +8,8 @@
     "build": "tsc",
     "dev": "ts-node --esm src/index.ts",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts"
   },
   "repository": {
     "type": "git",
@@ -27,10 +28,16 @@
   },
   "homepage": "https://github.com/rudrankriyam/Clauduck#readme",
   "devDependencies": {
+    "@eslint/js": "^9.39.2",
     "@types/express": "^5.0.6",
     "@types/node": "^25.0.9",
+    "@typescript-eslint/eslint-plugin": "^8.53.1",
+    "@typescript-eslint/parser": "^8.53.1",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.53.1"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.14",

@@ -9,17 +9,15 @@ import express, { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
 import dotenv from "dotenv";
 
-import { createOctokit, postComment } from "./github/client.js";
+import { postComment } from "./github/client.js";
 import {
-  getGitHubAppConfig,
   getAuthOctokit,
-  getInstallationId,
   isGitHubAppConfigured,
   checkPartialAppConfig,
 } from "./github/app.js";
 import { parseCommand } from "./commands/parser.js";
 import { executeSessionQuery, clearSession } from "./agent/client.js";
-import { GitHubContext, CommandMode } from "./utils/types.js";
+import { GitHubContext, CommandMode, GitHubWebhookPayload } from "./utils/types.js";
 
 dotenv.config();
 
@@ -113,7 +111,7 @@ function buildGitHubContext(
 async function processCommand(
   context: GitHubContext,
   commandText: string,
-  payload: any
+  payload: GitHubWebhookPayload
 ): Promise<void> {
   const { octokit } = await getAuthOctokit(payload);
 
@@ -183,7 +181,7 @@ async function processCommand(
 /**
  * Handle stop/cancel commands
  */
-async function handleStopCommand(context: GitHubContext, payload: any): Promise<void> {
+async function handleStopCommand(context: GitHubContext, payload: GitHubWebhookPayload): Promise<void> {
   clearSession(context);
 
   try {

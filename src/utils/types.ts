@@ -37,3 +37,62 @@ export interface AgentResponse {
   success: boolean;
   error?: string;
 }
+
+/**
+ * GitHub webhook payload for issue_comment events
+ */
+export interface GitHubWebhookPayload {
+  action?: string;
+  comment?: {
+    body: string;
+    id: number;
+  };
+  issue?: {
+    number: number;
+    title?: string;
+  };
+  pull_request?: {
+    number: number;
+    title?: string;
+  };
+  repository?: {
+    full_name: string;
+    name: string;
+    owner: {
+      login: string;
+    };
+  };
+  sender?: {
+    type: string;
+  };
+  installation?: {
+    id: number;
+  };
+}
+
+/**
+ * GitHub API response headers (relevant rate limit fields)
+ */
+export interface GitHubApiHeaders {
+  "x-ratelimit-remaining"?: string;
+  "x-ratelimit-reset"?: string;
+  "retry-after"?: string;
+  [key: string]: string | undefined;
+}
+
+/**
+ * Generic API response wrapper
+ */
+export interface ApiResponse<T> {
+  data: T;
+  headers: GitHubApiHeaders;
+}
+
+/**
+ * Rate limiter status
+ */
+export interface RateLimitStatus {
+  remaining: number;
+  resetAt: Date;
+  delay: number;
+}
