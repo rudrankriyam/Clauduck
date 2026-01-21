@@ -27,10 +27,14 @@ function verifyWebhookSignature(
   payload: string,
   signature: string | undefined
 ): boolean {
-  // Require signature when secret is configured
+  // In production, require webhook secret
   if (!WEBHOOK_SECRET) {
-    console.warn("Webhook secret not configured - skipping verification");
-    return true; // Allow in development if no secret set
+    if (process.env.NODE_ENV === "development") {
+      console.warn("Webhook secret not configured - skipping verification (development mode)");
+      return true;
+    }
+    console.error("Webhook secret not configured - refusing request in production");
+    return false;
   }
 
   if (!signature) {
@@ -104,7 +108,8 @@ async function processCommand(
 ): Promise<void> {
   const token = process.env.GITHUB_TOKEN;
   if (!token) {
-    console.error("GITHUB_TOKEN not configured");
+    console.error("GITHUB_TOKEN not configured - cannot respond to user");
+    // Can't post comment without token, but webhook should still return 200
     return;
   }
 
@@ -399,12 +404,6 @@ async function handleIssueComment(payload: {
     comment.id
   );
 
-  // Check for stop/cancel first
-  if (/\b(stop|cancel|abort|halt)\b/i.test(comment.body)) {
-    await handleStopCommand(context);
-    return;
-  }
-
   // Check for @clauduck mention (case-insensitive, handle [bot])
   const mentionPattern = /@clauduck(\[[a-z]+\])?/gi;
   if (mentionPattern.test(comment.body)) {
@@ -412,6 +411,13 @@ async function handleIssueComment(payload: {
 
     // Extract command (remove mention)
     const commandText = comment.body.replace(mentionPattern, "").trim();
+
+    // Check for stop/cancel after @clauduck mention
+    if (/\b(stop|cancel|abort|halt)\b/i.test(commandText)) {
+      await handleStopCommand(context);
+      return;
+    }
+
     await processCommand(context, commandText);
   }
 }

@@ -18,6 +18,9 @@ function getSessionKey(context: GitHubContext): string {
   return `${context.owner}/${context.repo}#${context.issueNumber}`;
 }
 
+// Session TTL: 24 hours (prevents unbounded memory growth)
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+
 // In-memory session storage (can be persisted to disk/db in production)
 interface SessionInfo {
   sessionId: string;
@@ -25,6 +28,22 @@ interface SessionInfo {
   createdAt: number;
 }
 const sessions = new Map<string, SessionInfo>();
+
+/**
+ * Clean up expired sessions (runs periodically)
+ */
+function cleanupExpiredSessions(): void {
+  const now = Date.now();
+  for (const [key, session] of sessions.entries()) {
+    if (now - session.createdAt > SESSION_TTL_MS) {
+      sessions.delete(key);
+      console.log(`Cleaned up expired session: ${key}`);
+    }
+  }
+}
+
+// Start periodic cleanup (every hour)
+setInterval(cleanupExpiredSessions, 60 * 60 * 1000);
 
 /**
  * Get V2 session options configured for MiniMax
@@ -167,8 +186,17 @@ export async function executeSessionQuery(
       }
 
       // Get final result from result message
-      if (message.type === "result" && message.subtype === "success") {
-        result = message.result;
+      if (message.type === "result") {
+        if (message.subtype === "success") {
+          result = message.result;
+        } else {
+          // Handle error subtypes
+          return {
+            success: false,
+            result: "",
+            error: message.subtype || "Session error",
+          };
+        }
       }
     }
 
@@ -218,8 +246,13 @@ export async function* executeSessionStreaming(
       }
     }
 
-    if (message.type === "result" && message.subtype === "success") {
-      yield message.result;
+    if (message.type === "result") {
+      if (message.subtype === "success") {
+        yield message.result;
+      } else {
+        yield `[Error: ${message.subtype || "Session error"}]`;
+        return;
+      }
     }
   }
 }

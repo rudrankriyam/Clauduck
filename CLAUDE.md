@@ -75,9 +75,19 @@ Required environment variables:
 - `GITHUB_TOKEN` - GitHub PAT or App installation token
 - `GITHUB_WEBHOOK_SECRET` - Webhook signature secret (production)
 - `PORT` - Server port (default: 3000)
+- `NODE_ENV` - Set to "development" to skip webhook verification (not recommended for production)
 
 MiniMax endpoint: `https://api.minimax.io/anthropic`
 Model: `MiniMax-M2.1`
+
+### GitHub App vs PAT
+
+Currently uses PAT for simplicity. For production with broader repo access, consider:
+- GitHub App with installation tokens for per-repo permissions
+- Enforce `payload.installation` for authentication
+- Add repo/org allowlist in configuration
+
+Using PAT with webhook secret provides reasonable security for personal use.
 
 ### Git Conventions
 
