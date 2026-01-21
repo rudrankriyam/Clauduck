@@ -152,11 +152,17 @@ async function processCommand(
   payload: GitHubWebhookPayload
 ): Promise<void> {
   let octokit: import("@octokit/rest").Octokit | null = null;
+  let hadToken = false;
 
   try {
     // Get authenticated Octokit client
     const authResult = await getAuthOctokit(payload);
     octokit = authResult.octokit;
+
+    // Set GitHub token for agent subprocess (installation-scoped, limited permissions)
+    process.env.GH_TOKEN = authResult.token;
+    hadToken = true;
+    console.log(`[SERVER] GH_TOKEN set for agent (installation token, scoped to repo)`);
 
     // Post acknowledgment
     await postComment(
@@ -184,10 +190,14 @@ async function processCommand(
     const prompt = buildPrompt(context, parsed);
 
     // Execute based on mode
+    console.log(`[SERVER] Calling executeSessionQuery...`);
     const result = await executeSessionQuery(context, prompt, parsed.mode);
+    console.log(`[SERVER] executeSessionQuery returned, success: ${result.success}`);
 
     if (result.success) {
+      console.log(`[SERVER] Posting success response...`);
       const response = formatResponse(context, parsed, result.result);
+      console.log(`[SERVER] Response length: ${response.length}`);
       await postComment(
         octokit,
         context.owner,
@@ -195,7 +205,9 @@ async function processCommand(
         context.issueNumber,
         response
       );
+      console.log(`[SERVER] Comment posted!`);
     } else {
+      console.log(`[SERVER] Posting error response...`);
       await postComment(
         octokit,
         context.owner,
@@ -203,6 +215,7 @@ async function processCommand(
         context.issueNumber,
         `Error: ${sanitizeError(result.error || "Unknown error")}`
       );
+      console.log(`[SERVER] Error comment posted`);
     }
   } catch (error) {
     console.error("Command processing error:", error);
@@ -221,6 +234,12 @@ async function processCommand(
     } else {
       // Auth failed, can't post error comment
       console.error("Auth failed, could not post error comment to GitHub");
+    }
+  } finally {
+    // Clean up token from environment (security best practice)
+    if (hadToken) {
+      delete process.env.GH_TOKEN;
+      console.log(`[SERVER] GH_TOKEN cleaned up`);
     }
   }
 }
@@ -325,11 +344,12 @@ function formatResponse(
   parsed: { action: string; target: string; mode: CommandMode },
   result: string
 ): string {
-  const header = `## Clauduck Response\n\n**Command:** @clauduck ${parsed.action} ${parsed.target}\n\n`;
-  const truncated = result.length > 15000 ? result.slice(0, 15000) + "\n\n_(truncated)_" : result;
-  const footer = `\n---\n*Powered by MiniMax M2.1*`;
-
-  return header + truncated + footer;
+  // Truncate if too long for GitHub comments
+  const maxLength = 15000;
+  if (result.length > maxLength) {
+    return result.slice(0, maxLength) + "\n\n_(truncated)_";
+  }
+  return result;
 }
 
 /**
@@ -413,7 +433,14 @@ async function handleIssueComment(payload: {
   installation?: { id: number };
 }) {
   const { comment, issue, repository, sender } = payload;
-  if (!comment || !issue || !repository || !sender) return;
+  console.log(`[WEBHOOK] handleIssueComment called`);
+  console.log(`[WEBHOOK] comment: ${comment?.body?.slice(0, 50)}...`);
+  console.log(`[WEBHOOK] sender: ${sender?.login}, type: ${sender?.type}`);
+
+  if (!comment || !issue || !repository || !sender) {
+    console.log(`[WEBHOOK] Missing required fields, returning`);
+    return;
+  }
 
   if (sender.type === "Bot") {
     console.log("Skipping bot comment");
@@ -434,7 +461,10 @@ async function handleIssueComment(payload: {
     return;
   }
 
+  console.log(`[WEBHOOK] Getting auth octokit...`);
   const { octokit } = await getAuthOctokit(payload);
+  console.log(`[WEBHOOK] Got octokit`);
+
   const repoOwner = repository.owner.login;
 
   if (!isOwner(repoOwner, senderLogin) && !(await isCollaborator(octokit, repoOwner, repository.name, senderLogin))) {
@@ -455,13 +485,18 @@ async function handleIssueComment(payload: {
     console.log(`Found @clauduck mention in issue #${issue.number}`);
 
     const commandText = comment.body.replace(mentionPattern, "").trim();
+    console.log(`[WEBHOOK] Command: "${commandText}"`);
 
     if (isStopCommand(commandText)) {
       await handleStopCommand(context, payload);
       return;
     }
 
+    console.log(`[WEBHOOK] Calling processCommand...`);
     await processCommand(context, commandText, payload);
+    console.log(`[WEBHOOK] processCommand returned`);
+  } else {
+    console.log(`[WEBHOOK] No @clauduck mention found`);
   }
 }
 

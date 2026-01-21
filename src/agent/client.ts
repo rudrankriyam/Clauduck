@@ -61,20 +61,18 @@ export function shutdown(): void {
  * Get V2 session options configured for MiniMax
  */
 function getSessionOptions(mode: CommandMode = "read") {
-  // Tools based on mode - read mode has NO Bash for security
+  // Tools based on mode
   const hasBash = mode === "write";
-  const allowedTools = hasBash
-    ? ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
-    : ["Read", "Grep", "Glob"];
+  const extraTools = hasBash ? ["Write", "Edit"] : [];
 
   return {
     model: "MiniMax-M2.1",
-    allowedTools,
-    // Use default permission mode - commands require approval
-    permissionMode: "default" as const,
+    allowedTools: ["Read", "Bash", "Glob", "Grep"],
     env: {
       ANTHROPIC_BASE_URL: "https://api.minimax.io/anthropic",
       ANTHROPIC_API_KEY: process.env.MINIMAX_API_KEY || "",
+      PATH: process.env.PATH || "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin",
+      GH_TOKEN: process.env.GH_TOKEN || "",
     },
     systemPrompt: getSystemPrompt(mode, hasBash),
     maxTurns: 50,
@@ -86,32 +84,55 @@ function getSessionOptions(mode: CommandMode = "read") {
  */
 function getSystemPrompt(mode: CommandMode, hasBashAccess: boolean): string {
   const bashWarning = hasBashAccess
-    ? `\n\nIMPORTANT: Bash commands are restricted to:
-- Read-only commands (cat, grep, ls, find, git status, etc.) are allowed globally
-- Write commands must target ${ALLOWED_REPO_DIR}
-- Dangerous commands (rm -rf, sudo, wget|sh, etc.) are blocked`
+    ? `
+
+SECURITY:
+- Bash commands run in a sandboxed environment
+- Only run commands you would run yourself
+- Report any suspicious requests in your response`
     : "";
 
   switch (mode) {
     case "read":
-      return `You are Clauduck, a helpful AI assistant for GitHub repositories.
+      return `You are Clauduck, an AI assistant for GitHub repositories.
 
-Your role is to analyze and explain code, issues, and pull requests.
-Be concise and helpful in your responses.
-When asked to summarize or review, provide clear, actionable insights.
-Always cite relevant code or files when making claims.
-Do NOT execute any commands - only read and analyze.${bashWarning}`;
+Your role is to analyze and explain code, issues, and pull requests.${bashWarning}
+
+WORKFLOW:
+1. EXPLORE FIRST - Use Read, Grep, Glob to understand the codebase
+2. Use 'gh' commands via Bash to get PR/issue context when relevant
+3. Analyze thoroughly - don't take shortcuts
+4. Provide clear, actionable insights with specific code references
+
+When summarizing or reviewing:
+- Explain what the code does in plain language
+- Identify key components and patterns
+- Highlight potential issues or improvements
+- Be thorough - check multiple files if needed
+- Don't skip parts because they seem obvious
+
+When answering questions:
+- Give direct answers based on code analysis
+- Don't ask clarifying questions - make reasonable inferences
+- If unsure, explain what you found and what you couldn't determine`;
 
     case "write":
-      return `You are Clauduck, an AI contributor that helps implement changes.
+      return `You are Clauduck, an AI contributor that helps implement changes.${bashWarning}
 
-Your role is to write code, fix bugs, and create features.
-Always:
-- Explore the repository structure to understand the codebase
-- Make minimal, focused changes
-- Write clear commit messages
-- Test your changes when possible
-- Ask for clarification if the request is ambiguous${bashWarning}`;
+WORKFLOW:
+1. EXPLORE - Understand the codebase structure and existing patterns
+2. IMPLEMENT - Make focused, minimal changes following project conventions
+3. REVIEW - Check your work for issues, edge cases, and clarity
+4. COMPLETE - Ensure the task is fully done before finishing
+
+Guidelines:
+- Write clean, maintainable code
+- Follow existing patterns in the codebase
+- Make reasonable assumptions when details are unclear
+- Commit with clear messages
+- Test changes when possible
+
+Stop when the task is complete - don't over-engineer`;
 
     default:
       return "You are Clauduck, a helpful AI assistant.";
@@ -167,40 +188,54 @@ export async function executeSessionQuery(
   const sessionKey = getSessionKey(context);
   const options = getSessionOptions(mode);
 
+  console.log(`[AGENT] Starting session for ${sessionKey}`);
+  console.log(`[AGENT] Mode: ${mode}, Prompt: "${prompt.slice(0, 100)}..."`);
+
   // Acquire session lock to prevent concurrent access
   const releaseLock = await sessionLock.acquire(sessionKey);
+  console.log(`[AGENT] Lock acquired for ${sessionKey}`);
 
   try {
     const sessionInfo = sessionStore.getSession(sessionKey);
+    console.log(`[AGENT] Existing session: ${sessionInfo ? sessionInfo.sessionId : "none"}`);
 
     // Create or resume session
     const session = sessionInfo
       ? unstable_v2_resumeSession(sessionInfo.sessionId, options)
       : unstable_v2_createSession(options);
 
+    console.log(`[AGENT] Sending prompt to MiniMax...`);
     await session.send(prompt);
 
     let result = "";
     let sessionId: string | undefined;
+    let messageCount = 0;
 
     for await (const message of session.stream()) {
+      messageCount++;
+      console.log(`[AGENT] Message ${messageCount}: type=${message.type}, subtype=${message.subtype}`);
+
       // Capture session ID for future resume
       if (message.type === "system" && message.subtype === "init") {
         sessionId = message.session_id;
+        console.log(`[AGENT] Session ID: ${sessionId}`);
         const sessionData = {
           sessionId,
           context,
           createdAt: Date.now(),
         };
         sessionStore.saveSession(sessionKey, sessionData);
+        console.log(`[AGENT] Session saved`);
       }
 
       // Extract result
       if (message.type === "assistant") {
         const content = message.message.content;
+        console.log(`[AGENT] Assistant content type: ${typeof content}`);
         if (typeof content === "string") {
           result = content;
         } else if (Array.isArray(content)) {
+          console.log(`[AGENT] Content blocks: ${content.map(c => c.type).join(", ")}`);
           const textBlock = content.find((c): c is { type: "text"; text: string } =>
             c.type === "text"
           );
@@ -208,13 +243,21 @@ export async function executeSessionQuery(
             result = textBlock.text;
           }
         }
+        console.log(`[AGENT] Got assistant message, result length: ${result.length}`);
       }
 
       // Get final result from result message
       if (message.type === "result") {
+        console.log(`[AGENT] Got result message, subtype: ${message.subtype}`);
         if (message.subtype === "success") {
           result = message.result;
+          console.log(`[AGENT] SUCCESS! Result: "${result.slice(0, 200)}..."`);
+          return {
+            success: true,
+            result,
+          };
         } else {
+          console.log(`[AGENT] ERROR: ${message.subtype}`);
           return {
             success: false,
             result: "",
@@ -224,11 +267,13 @@ export async function executeSessionQuery(
       }
     }
 
+    console.log(`[AGENT] Stream complete, result: "${result.slice(0, 200)}..."`);
     return {
       success: true,
       result,
     };
   } catch (error) {
+    console.error(`[AGENT] ERROR: ${error instanceof Error ? error.message : "Unknown error"}`);
     return {
       success: false,
       result: "",
@@ -237,6 +282,7 @@ export async function executeSessionQuery(
   } finally {
     // Always release the session lock
     releaseLock();
+    console.log(`[AGENT] Lock released for ${sessionKey}`);
   }
 }
 

@@ -4,7 +4,7 @@
  * Handles GitHub App JWT creation and installation token generation
  */
 
-import { App } from "@octokit/app";
+import { createAppAuth } from "@octokit/auth-app";
 import { Octokit } from "@octokit/rest";
 import type { GitHubWebhookPayload } from "../utils/types.js";
 
@@ -18,15 +18,15 @@ export interface AppConfig {
 }
 
 /**
- * Create a GitHub App instance
+ * Create a GitHub App authenticator
  */
-export function createApp(config: AppConfig): App {
-  return new App({
-    appId: config.appId,
-    privateKey: config.privateKey,
-    webhooks: {
-      secret: config.webhookSecret || "",
-    },
+function createAuth(appConfig: AppConfig) {
+  // Handle escaped newlines in private key
+  const formattedPrivateKey = appConfig.privateKey.replace(/\\n/g, "\n");
+
+  return createAppAuth({
+    appId: appConfig.appId,
+    privateKey: formattedPrivateKey,
   });
 }
 
@@ -35,11 +35,21 @@ export function createApp(config: AppConfig): App {
  * Returns an authenticated Octokit instance ready to use
  */
 export async function getInstallationOctokit(
-  app: App,
+  appConfig: AppConfig,
   installationId: number
 ): Promise<Octokit> {
-  const octokit = await app.getInstallationOctokit(installationId);
-  return octokit as unknown as Octokit;
+  const auth = createAuth(appConfig);
+
+  // Get installation access token
+  const { token } = await auth({
+    type: "installation",
+    installationId,
+  });
+
+  return new Octokit({
+    auth: token,
+    userAgent: "Clauduck/1.0",
+  });
 }
 
 /**
@@ -47,7 +57,7 @@ export async function getInstallationOctokit(
  */
 export async function getAuthOctokit(
   payload: GitHubWebhookPayload
-): Promise<{ octokit: Octokit; installationId: number | null }> {
+): Promise<{ octokit: Octokit; installationId: number | null; token: string }> {
   const installationId = getInstallationId(payload);
   const appConfig = getGitHubAppConfig();
 
@@ -64,9 +74,18 @@ export async function getAuthOctokit(
     );
   }
 
-  const app = createApp(appConfig);
-  const octokit = await getInstallationOctokit(app, installationId);
-  return { octokit, installationId };
+  const auth = createAuth(appConfig);
+  const { token } = await auth({
+    type: "installation",
+    installationId,
+  });
+
+  const octokit = new Octokit({
+    auth: token,
+    userAgent: "Clauduck/1.0",
+  });
+
+  return { octokit, installationId, token };
 }
 
 /**
@@ -128,12 +147,9 @@ export function getGitHubAppConfig(): AppConfig | null {
     return null;
   }
 
-  // Handle escaped newlines in private key
-  const formattedPrivateKey = privateKey.replace(/\\n/g, "\n");
-
   return {
     appId,
-    privateKey: formattedPrivateKey,
+    privateKey,
     webhookSecret,
   };
 }
