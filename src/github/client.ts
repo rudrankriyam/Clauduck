@@ -62,14 +62,17 @@ export async function createBranch(
       ref: `heads/${sourceBranch}`,
     });
 
-    await octokit.rest.git.createRef({
+    const createResult = await octokit.rest.git.createRef({
       owner,
       repo,
       ref: `refs/heads/${branchName}`,
       sha: refData.data.object.sha,
     });
 
-    return { data: {}, headers: {} };
+    return {
+      data: { branchName },
+      headers: createResult.headers as unknown as GitHubApiHeaders,
+    };
   });
 }
 

@@ -249,9 +249,13 @@ async function processCommand(
   commandText: string,
   payload: GitHubWebhookPayload
 ): Promise<void> {
-  const { octokit } = await getAuthOctokit(payload);
+  let octokit: import("@octokit/rest").Octokit | null = null;
 
   try {
+    // Get authenticated Octokit client
+    const authResult = await getAuthOctokit(payload);
+    octokit = authResult.octokit;
+
     // Post acknowledgment
     await postComment(
       octokit,
@@ -300,16 +304,21 @@ async function processCommand(
     }
   } catch (error) {
     console.error("Command processing error:", error);
-    try {
-      await postComment(
-        octokit,
-        context.owner,
-        context.repo,
-        context.issueNumber,
-        `❌ Error processing command: ${error instanceof Error ? error.message : "Unknown error"}`
-      );
-    } catch {
-      console.error("Failed to post error comment");
+    if (octokit) {
+      try {
+        await postComment(
+          octokit,
+          context.owner,
+          context.repo,
+          context.issueNumber,
+          `❌ Error processing command: ${error instanceof Error ? error.message : "Unknown error"}`
+        );
+      } catch {
+        console.error("Failed to post error comment");
+      }
+    } else {
+      // Auth failed, can't post error comment
+      console.error("Auth failed, could not post error comment to GitHub");
     }
   }
 }

@@ -53,6 +53,32 @@ interface SessionInfo {
 }
 const sessions = new Map<string, SessionInfo>();
 
+// Session locks for concurrent command handling
+const sessionLocks = new Map<string, Promise<void>>();
+
+/**
+ * Acquire lock for a session key, queueing concurrent commands
+ */
+async function acquireSessionLock(sessionKey: string): Promise<() => void> {
+  const currentLock = sessionLocks.get(sessionKey);
+
+  if (currentLock) {
+    // Wait for current lock to release
+    await currentLock;
+  }
+
+  // Create new lock promise
+  let releaseFn: () => void;
+  const lockPromise = new Promise<void>((resolve) => {
+    releaseFn = resolve;
+  });
+
+  sessionLocks.set(sessionKey, lockPromise);
+
+  // Return release function
+  return releaseFn!;
+}
+
 /**
  * Persist session to disk with secure permissions
  */
@@ -70,8 +96,8 @@ function persistSession(key: string, session: SessionInfo): void {
     try {
       renameSync(tempPath, filePath);
     } catch {
-      // Fallback: copy content if rename fails (e.g., cross-device)
-      writeFileSync(filePath, readFileSync(tempPath));
+      // Fallback: copy content if rename fails (e.g., cross-device) with secure permissions
+      writeFileSync(filePath, readFileSync(tempPath), { mode: 0o600 });
       unlinkSync(tempPath);
     }
   } catch (error) {
@@ -247,6 +273,9 @@ export async function executeSessionQuery(
   const sessionKey = getSessionKey(context);
   const options = getSessionOptions(mode);
 
+  // Acquire session lock to prevent concurrent access
+  const releaseLock = await acquireSessionLock(sessionKey);
+
   try {
     const sessionInfo = sessions.get(sessionKey);
 
@@ -312,6 +341,10 @@ export async function executeSessionQuery(
       result: "",
       error: error instanceof Error ? error.message : "Unknown error",
     };
+  } finally {
+    // Always release the session lock
+    releaseLock();
+    sessionLocks.delete(sessionKey);
   }
 }
 
