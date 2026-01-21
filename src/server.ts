@@ -24,6 +24,82 @@ dotenv.config();
 export const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Job queue for async webhook processing
+interface WebhookJob {
+  id: string;
+  event: string;
+  payload: GitHubWebhookPayload;
+  createdAt: number;
+}
+const jobQueue: Map<string, WebhookJob> = new Map();
+const processingJobs: Set<string> = new Set();
+
+// Deduplication window: 5 seconds
+const DEDUP_WINDOW_MS = 5000;
+
+/**
+ * Process webhook job asynchronously
+ */
+async function processWebhookJob(job: WebhookJob): Promise<void> {
+  const { event, payload } = job;
+
+  try {
+    switch (event) {
+      case "issue_comment":
+        await handleIssueComment(payload);
+        break;
+      case "issues":
+        await handleIssueOpened(payload);
+        break;
+      case "pull_request":
+        await handlePROpened(payload);
+        break;
+      default:
+        console.log(`Ignoring event: ${event}`);
+    }
+  } catch (error) {
+    console.error(`Error processing webhook job ${job.id}:`, error);
+  } finally {
+    processingJobs.delete(job.id);
+    jobQueue.delete(job.id);
+  }
+}
+
+/**
+ * Add job to queue with deduplication
+ */
+function enqueueJob(event: string, payload: GitHubWebhookPayload, deliveryId: string): void {
+  const now = Date.now();
+  const jobId = `${deliveryId}`;
+
+  // Check if already processing this delivery
+  if (processingJobs.has(jobId)) {
+    console.log(`Job ${jobId} already processing, skipping`);
+    return;
+  }
+
+  // Check for recent duplicate
+  const existingJob = jobQueue.get(jobId);
+  if (existingJob && (now - existingJob.createdAt) < DEDUP_WINDOW_MS) {
+    console.log(`Recent duplicate ${jobId} detected, skipping`);
+    return;
+  }
+
+  // Add new job
+  const job: WebhookJob = {
+    id: jobId,
+    event,
+    payload,
+    createdAt: now,
+  };
+  jobQueue.set(jobId, job);
+  processingJobs.add(jobId);
+
+  // Process asynchronously
+  console.log(`Queued job ${jobId} for ${event}`);
+  processWebhookJob(job).catch(console.error);
+}
+
 /**
  * Verify GitHub webhook signature (HMAC-SHA256)
  */
@@ -36,11 +112,12 @@ function verifyWebhookSignature(
 
   // In production, require webhook secret
   if (!webhookSecret) {
-    if (process.env.ALLOW_UNVERIFIED_WEBHOOKS === "true") {
-      console.warn("Webhook secret not configured - skipping verification (ALLOW_UNVERIFIED_WEBHOOKS=true)");
+    const isDevelopment = process.env.NODE_ENV === "development" || process.env.DEBUG === "true";
+    if (isDevelopment) {
+      console.warn("Webhook secret not configured - skipping verification (development mode)");
       return true;
     }
-    console.error("Webhook secret not configured - refusing request. Set ALLOW_UNVERIFIED_WEBHOOKS=true to skip in development.");
+    console.error("Webhook secret not configured - refusing request. Set NODE_ENV=development to skip in development.");
     return false;
   }
 
@@ -78,10 +155,69 @@ function parseWebhookPayload(
 ): { success: boolean; data?: object; error?: string } {
   try {
     const data = JSON.parse(body.toString());
+
+    // Basic schema validation
+    if (!validateWebhookSchema(data)) {
+      return { success: false, error: "Invalid webhook payload schema" };
+    }
+
     return { success: true, data };
   } catch {
     return { success: false, error: "Invalid JSON payload" };
   }
+}
+
+/**
+ * Validate webhook payload has required fields
+ */
+function validateWebhookSchema(data: unknown): data is GitHubWebhookPayload {
+  if (typeof data !== "object" || data === null) {
+    return false;
+  }
+
+  const payload = data as Record<string, unknown>;
+
+  // Check for required nested structure if repository exists
+  if (payload.repository) {
+    const repo = payload.repository as Record<string, unknown>;
+    if (typeof repo.full_name !== "string" || typeof repo.owner !== "object") {
+      return false;
+    }
+    const owner = repo.owner as Record<string, unknown>;
+    if (typeof owner.login !== "string") {
+      return false;
+    }
+  }
+
+  // For issue_comment events, validate comment and issue
+  if (payload.comment && payload.issue) {
+    const comment = payload.comment as Record<string, unknown>;
+    const issue = payload.issue as Record<string, unknown>;
+    if (typeof comment.body !== "string" || typeof comment.id !== "number") {
+      return false;
+    }
+    if (typeof issue.number !== "number") {
+      return false;
+    }
+  }
+
+  // For issues events, validate issue
+  if (payload.issue && !payload.comment) {
+    const issue = payload.issue as Record<string, unknown>;
+    if (typeof issue.number !== "number") {
+      return false;
+    }
+  }
+
+  // For PR events, validate pull_request
+  if (payload.pull_request) {
+    const pr = payload.pull_request as Record<string, unknown>;
+    if (typeof pr.number !== "number") {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /**
@@ -314,9 +450,11 @@ app.post("/webhook", async (req: Request, res: Response) => {
   try {
     const signature = req.headers["x-hub-signature-256"];
     const event = req.headers["x-github-event"];
+    const deliveryId = req.headers["x-github-delivery"];
 
-    const signatureStr = Array.isArray(signature) ? signature[0] : signature;
-    const eventStr = Array.isArray(event) ? event[0] : event;
+    const signatureStr = Array.isArray(signature) ? signature[0] : (signature || "");
+    const eventStr = Array.isArray(event) ? event[0] : (event || "");
+    const deliveryIdStr = Array.isArray(deliveryId) ? deliveryId[0] : (deliveryId || `unknown-${Date.now()}`);
 
     const payloadString = req.body.toString();
     if (!verifyWebhookSignature(payloadString, signatureStr)) {
@@ -330,38 +468,23 @@ app.post("/webhook", async (req: Request, res: Response) => {
       return;
     }
 
-    const payload = parseResult.data as {
-      action?: string;
-      comment?: { body: string; id: number };
-      issue?: { number: number; title?: string };
-      pull_request?: { number: number; title?: string };
-      repository?: { full_name: string; name: string; owner: { login: string } };
-      sender?: { type: string };
-      installation?: { id: number };
-    };
+    const payload = parseResult.data as GitHubWebhookPayload;
 
-    console.log(`Received event: ${eventStr}`);
+    console.log(`Received event: ${eventStr} (delivery: ${deliveryIdStr})`);
 
     if (payload.action && !["created", "opened"].includes(payload.action)) {
       res.status(200).json({ status: "ignored" });
       return;
     }
 
-    switch (eventStr) {
-      case "issue_comment":
-        await handleIssueComment(payload);
-        break;
-      case "issues":
-        await handleIssueOpened(payload);
-        break;
-      case "pull_request":
-        await handlePROpened(payload);
-        break;
-      default:
-        console.log(`Ignoring event: ${eventStr}`);
+    // Queue job for async processing and return immediately
+    if (["issue_comment", "issues", "pull_request"].includes(eventStr)) {
+      enqueueJob(eventStr, payload, deliveryIdStr);
+    } else {
+      console.log(`Ignoring event: ${eventStr}`);
     }
 
-    res.status(200).json({ status: "ok" });
+    res.status(200).json({ status: "queued" });
   } catch (error) {
     console.error("Webhook error:", error);
     res.status(500).json({ error: "Internal server error" });

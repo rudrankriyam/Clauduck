@@ -109,8 +109,12 @@ export class GitHubRateLimiter {
         const typedError = error as GitHubApiError;
         lastError = typedError;
 
+        // Check for explicit rate limit headers
+        const isRateLimited = typedError.headers?.["x-ratelimit-remaining"] === "0" ||
+          typedError.headers?.["retry-after"];
+
         // Check for rate limit error (403)
-        if (typedError.status === 403 || typedError.message?.includes("rate limit")) {
+        if ((typedError.status === 403 || typedError.message?.includes("rate limit")) && isRateLimited) {
           const retryAfter = typedError.headers?.["retry-after"]
             ? parseInt(typedError.headers["retry-after"], 10) * 1000
             : this.calculateRetryDelay(attempt);
@@ -126,6 +130,12 @@ export class GitHubRateLimiter {
           console.warn(`Secondary rate limit, waiting ${Math.round(retryAfter / 1000)}s (attempt ${attempt + 1}/${maxRetries + 1})`);
           await this.sleep(retryAfter);
           continue;
+        }
+
+        // 403 without rate limit headers is likely a permission error - don't retry
+        if (typedError.status === 403) {
+          console.error(`Permission denied (403) - not a rate limit error. Check API token permissions.`);
+          throw error;
         }
 
         // Non-rate-limit error, don't retry

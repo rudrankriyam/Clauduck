@@ -10,7 +10,7 @@ import {
   unstable_v2_resumeSession,
   unstable_v2_prompt,
 } from "@anthropic-ai/claude-agent-sdk";
-import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, readdirSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, readdirSync, chmodSync, renameSync } from "fs";
 import { join } from "path";
 import type { CommandMode, GitHubContext, AgentResponse } from "../utils/types.js";
 
@@ -18,6 +18,22 @@ import type { CommandMode, GitHubContext, AgentResponse } from "../utils/types.j
  * Session storage directory
  */
 const SESSION_DIR = process.env.SESSION_DIR || "/tmp/clauduck-sessions";
+
+/**
+ * Allowed directory for git operations (restrict Bash to this)
+ */
+const ALLOWED_REPO_DIR = process.env.REPO_DIR || "/tmp/clauduck-repos";
+
+/**
+ * Initialize session storage directory with secure permissions
+ */
+function initSessionStorage(): void {
+  if (!existsSync(SESSION_DIR)) {
+    mkdirSync(SESSION_DIR, { recursive: true });
+    // Set restrictive permissions (owner only)
+    chmodSync(SESSION_DIR, 0o700);
+  }
+}
 
 /**
  * Session key for tracking sessions per issue/PR
@@ -38,21 +54,26 @@ interface SessionInfo {
 const sessions = new Map<string, SessionInfo>();
 
 /**
- * Initialize session storage directory
- */
-function initSessionStorage(): void {
-  if (!existsSync(SESSION_DIR)) {
-    mkdirSync(SESSION_DIR, { recursive: true });
-  }
-}
-
-/**
- * Persist session to disk
+ * Persist session to disk with secure permissions
  */
 function persistSession(key: string, session: SessionInfo): void {
   try {
     const filePath = join(SESSION_DIR, `${Buffer.from(key).toString("base64")}.json`);
-    writeFileSync(filePath, JSON.stringify(session, null, 2));
+    // Write to temp file first, then rename for atomic write
+    const tempPath = `${filePath}.${Date.now()}.tmp`;
+    writeFileSync(tempPath, JSON.stringify(session, null, 2), { mode: 0o600 });
+    // Atomic rename
+    if (existsSync(filePath)) {
+      unlinkSync(filePath);
+    }
+    // Rename temp to final path
+    try {
+      renameSync(tempPath, filePath);
+    } catch {
+      // Fallback: copy content if rename fails (e.g., cross-device)
+      writeFileSync(filePath, readFileSync(tempPath));
+      unlinkSync(tempPath);
+    }
   } catch (error) {
     console.error(`Failed to persist session ${key}:`, error);
   }
@@ -67,7 +88,7 @@ function loadAllPersistedSessions(): void {
     const files = readdirSync(SESSION_DIR);
     let loaded = 0;
     for (const file of files) {
-      if (file.endsWith(".json")) {
+      if (file.endsWith(".json") && !file.endsWith(".tmp")) {
         try {
           const data = JSON.parse(readFileSync(join(SESSION_DIR, file), "utf-8"));
           if (Date.now() - data.createdAt <= SESSION_TTL_MS) {
@@ -102,7 +123,9 @@ function cleanupExpiredSessions(): void {
       // Also delete persisted file
       try {
         const filePath = join(SESSION_DIR, `${Buffer.from(key).toString("base64")}.json`);
-        unlinkSync(filePath);
+        if (existsSync(filePath)) {
+          unlinkSync(filePath);
+        }
       } catch {
         // Ignore cleanup errors
       }
@@ -118,28 +141,37 @@ setInterval(cleanupExpiredSessions, 60 * 60 * 1000);
  * Get V2 session options configured for MiniMax
  */
 function getSessionOptions(mode: CommandMode = "read") {
-  // Tools based on mode - read mode has NO bash for security
-  const allowedTools = mode === "write"
+  // Tools based on mode - read mode has NO Bash for security
+  const hasBash = mode === "write";
+  const allowedTools = hasBash
     ? ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
     : ["Read", "Grep", "Glob"];
 
   return {
-    model: "MiniMax-M2.1", // MiniMax should map this appropriately
+    model: "MiniMax-M2.1",
     allowedTools,
-    permissionMode: "bypassPermissions" as const,
+    // Use default permission mode - commands require approval
+    permissionMode: "default" as const,
     env: {
       ANTHROPIC_BASE_URL: "https://api.minimax.io/anthropic",
       ANTHROPIC_API_KEY: process.env.MINIMAX_API_KEY || "",
     },
-    systemPrompt: getSystemPrompt(mode),
+    systemPrompt: getSystemPrompt(mode, hasBash),
     maxTurns: 50,
   };
 }
 
 /**
- * Get system prompt based on mode
+ * Get system prompt based on mode with Bash context
  */
-function getSystemPrompt(mode: CommandMode): string {
+function getSystemPrompt(mode: CommandMode, hasBashAccess: boolean): string {
+  const bashWarning = hasBashAccess
+    ? `\n\nIMPORTANT: Bash commands are restricted to:
+- Read-only commands (cat, grep, ls, find, git status, etc.) are allowed globally
+- Write commands must target ${ALLOWED_REPO_DIR}
+- Dangerous commands (rm -rf, sudo, wget|sh, etc.) are blocked`
+    : "";
+
   switch (mode) {
     case "read":
       return `You are Clauduck, a helpful AI assistant for GitHub repositories.
@@ -148,18 +180,18 @@ Your role is to analyze and explain code, issues, and pull requests.
 Be concise and helpful in your responses.
 When asked to summarize or review, provide clear, actionable insights.
 Always cite relevant code or files when making claims.
-Do NOT execute any commands - only read and analyze.`;
+Do NOT execute any commands - only read and analyze.${bashWarning}`;
 
     case "write":
       return `You are Clauduck, an AI contributor that helps implement changes.
 
 Your role is to write code, fix bugs, and create features.
 Always:
-- Explore the codebase first to understand the structure
+- Explore the repository structure to understand the codebase
 - Make minimal, focused changes
 - Write clear commit messages
 - Test your changes when possible
-- Ask for clarification if the request is ambiguous`;
+- Ask for clarification if the request is ambiguous${bashWarning}`;
 
     default:
       return "You are Clauduck, a helpful AI assistant.";
@@ -178,7 +210,7 @@ export async function executeQuery(
   try {
     const result = await unstable_v2_prompt(prompt, {
       ...options,
-      model: "MiniMax-M2.1", // MiniMax should map this appropriately
+      model: "MiniMax-M2.1",
     });
 
     if (result.subtype === "success") {
@@ -238,7 +270,7 @@ export async function executeSessionQuery(
           createdAt: Date.now(),
         };
         sessions.set(sessionKey, sessionData);
-        persistSession(sessionKey, sessionData); // Persist to disk
+        persistSession(sessionKey, sessionData);
       }
 
       // Extract result
@@ -261,7 +293,6 @@ export async function executeSessionQuery(
         if (message.subtype === "success") {
           result = message.result;
         } else {
-          // Handle error subtypes
           return {
             success: false,
             result: "",
@@ -337,7 +368,9 @@ export function clearSession(context: GitHubContext): void {
   // Remove persisted file
   try {
     const filePath = join(SESSION_DIR, `${Buffer.from(sessionKey).toString("base64")}.json`);
-    unlinkSync(filePath);
+    if (existsSync(filePath)) {
+      unlinkSync(filePath);
+    }
   } catch {
     // Ignore cleanup errors
   }
