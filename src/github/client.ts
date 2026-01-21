@@ -55,23 +55,30 @@ export async function createBranch(
   branchName: string,
   sourceBranch: string
 ): Promise<void> {
-  await rateLimiter.executeWithRetry(async () => {
-    const refData = await octokit.rest.git.getRef({
+  const refData = await rateLimiter.executeWithRetry(async () => {
+    const response = await octokit.rest.git.getRef({
       owner,
       repo,
       ref: `heads/${sourceBranch}`,
     });
 
-    const createResult = await octokit.rest.git.createRef({
+    return {
+      data: response.data,
+      headers: response.headers as unknown as GitHubApiHeaders,
+    };
+  });
+
+  await rateLimiter.executeWithRetry(async () => {
+    const response = await octokit.rest.git.createRef({
       owner,
       repo,
       ref: `refs/heads/${branchName}`,
-      sha: refData.data.object.sha,
+      sha: refData.object.sha,
     });
 
     return {
-      data: { branchName },
-      headers: createResult.headers as unknown as GitHubApiHeaders,
+      data: response.data,
+      headers: response.headers as unknown as GitHubApiHeaders,
     };
   });
 }
