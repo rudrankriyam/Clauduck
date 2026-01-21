@@ -8,7 +8,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import dotenv from "dotenv";
 
-import { postComment } from "./github/client.js";
+import { postComment, isCollaborator, isOwner } from "./github/client.js";
 import {
   getAuthOctokit,
   isGitHubAppConfigured,
@@ -123,6 +123,27 @@ function buildGitHubContext(
 }
 
 /**
+ * Sanitize error message for public display
+ * Removes internal paths, stack traces, and sensitive info
+ */
+function sanitizeError(message: string): string {
+  // Remove file paths (Unix and Windows)
+  let sanitized = message.replace(/\/[\w\/.-]+\//g, "[path]/");
+  sanitized = sanitized.replace(/[A-Za-z]:\\[\w\\.-]+\\/g, "[path]\\");
+
+  // Remove error codes and hex dumps
+  sanitized = sanitized.replace(/0x[0-9a-fA-F]+/g, "[hex]");
+  sanitized = sanitized.replace(/ERR_[\w]+/g, "[error]");
+
+  // Truncate if still too long
+  if (sanitized.length > 500) {
+    sanitized = sanitized.slice(0, 500) + "...";
+  }
+
+  return sanitized;
+}
+
+/**
  * Process a @clauduck command and post result back to GitHub
  */
 async function processCommand(
@@ -180,7 +201,7 @@ async function processCommand(
         context.owner,
         context.repo,
         context.issueNumber,
-        `Error: ${result.error || "Unknown error"}`
+        `Error: ${sanitizeError(result.error || "Unknown error")}`
       );
     }
   } catch (error) {
@@ -192,7 +213,7 @@ async function processCommand(
           context.owner,
           context.repo,
           context.issueNumber,
-          `Error processing command: ${error instanceof Error ? error.message : "Unknown error"}`
+          `Error processing command: ${sanitizeError(error instanceof Error ? error.message : "Unknown error")}`
         );
       } catch {
         console.error("Failed to post error comment");
@@ -388,7 +409,7 @@ async function handleIssueComment(payload: {
   comment?: { body: string; id: number };
   issue?: { number: number };
   repository?: { full_name: string; name: string; owner: { login: string } };
-  sender?: { type: string };
+  sender?: { type: string; login?: string };
   installation?: { id: number };
 }) {
   const { comment, issue, repository, sender } = payload;
@@ -396,6 +417,28 @@ async function handleIssueComment(payload: {
 
   if (sender.type === "Bot") {
     console.log("Skipping bot comment");
+    return;
+  }
+
+  // Check comment size limit (10KB max)
+  const MAX_COMMENT_SIZE = 10 * 1024;
+  if (comment.body.length > MAX_COMMENT_SIZE) {
+    console.log(`Comment too large (${comment.body.length} bytes), skipping`);
+    return;
+  }
+
+  // Check if sender is owner or collaborator
+  const senderLogin = sender.login;
+  if (!senderLogin) {
+    console.log("Skipping comment with unknown sender");
+    return;
+  }
+
+  const { octokit } = await getAuthOctokit(payload);
+  const repoOwner = repository.owner.login;
+
+  if (!isOwner(repoOwner, senderLogin) && !(await isCollaborator(octokit, repoOwner, repository.name, senderLogin))) {
+    console.log(`Skipping non-collaborator @${senderLogin}`);
     return;
   }
 

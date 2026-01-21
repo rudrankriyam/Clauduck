@@ -32,7 +32,7 @@ export class GitHubRateLimiter {
   };
 
   private minDelay: number = 100; // Minimum delay between requests (ms)
-  private max: number = 60000; //Delay Maximum delay (60 seconds)
+  private max: number = 60000; // Maximum delay (60 seconds)
 
   /**
    * Update rate limit state from GitHub response headers
