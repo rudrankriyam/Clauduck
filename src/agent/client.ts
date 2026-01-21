@@ -10,10 +10,9 @@ import {
   unstable_v2_resumeSession,
   unstable_v2_prompt,
 } from "@anthropic-ai/claude-agent-sdk";
-import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, readdirSync, chmodSync, renameSync } from "fs";
-import { join } from "path";
 import type { CommandMode, GitHubContext, AgentResponse } from "../utils/types.js";
 import { AsyncKeyedLock } from "../utils/async-lock.js";
+import { SessionStore, type SessionInfo } from "./session-store.js";
 
 /**
  * Session storage directory
@@ -26,17 +25,6 @@ const SESSION_DIR = process.env.SESSION_DIR || "/tmp/clauduck-sessions";
 const ALLOWED_REPO_DIR = process.env.REPO_DIR || "/tmp/clauduck-repos";
 
 /**
- * Initialize session storage directory with secure permissions
- */
-function initSessionStorage(): void {
-  if (!existsSync(SESSION_DIR)) {
-    mkdirSync(SESSION_DIR, { recursive: true });
-    // Set restrictive permissions (owner only)
-    chmodSync(SESSION_DIR, 0o700);
-  }
-}
-
-/**
  * Session key for tracking sessions per issue/PR
  */
 function getSessionKey(context: GitHubContext): string {
@@ -46,100 +34,21 @@ function getSessionKey(context: GitHubContext): string {
 // Session TTL: 24 hours (prevents unbounded memory growth)
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
-// In-memory session storage
-interface SessionInfo {
-  sessionId: string;
-  context: GitHubContext;
-  createdAt: number;
-}
-const sessions = new Map<string, SessionInfo>();
+const sessionStore = new SessionStore({
+  dir: SESSION_DIR,
+  ttlMs: SESSION_TTL_MS,
+});
 
 // Session locks for concurrent command handling (per session key)
 const sessionLock = new AsyncKeyedLock();
 
 /**
- * Persist session to disk with secure permissions
- */
-function persistSession(key: string, session: SessionInfo): void {
-  try {
-    const filePath = join(SESSION_DIR, `${Buffer.from(key).toString("base64")}.json`);
-    // Write to temp file first, then rename for atomic write
-    const tempPath = `${filePath}.${Date.now()}.tmp`;
-    writeFileSync(tempPath, JSON.stringify(session, null, 2), { mode: 0o600 });
-    // Atomic rename
-    if (existsSync(filePath)) {
-      unlinkSync(filePath);
-    }
-    // Rename temp to final path
-    try {
-      renameSync(tempPath, filePath);
-    } catch {
-      // Fallback: copy content if rename fails (e.g., cross-device) with secure permissions
-      writeFileSync(filePath, readFileSync(tempPath), { mode: 0o600 });
-      unlinkSync(tempPath);
-    }
-  } catch (error) {
-    console.error(`Failed to persist session ${key}:`, error);
-  }
-}
-
-/**
  * Load all persisted sessions on startup
  */
-function loadAllPersistedSessions(): void {
-  initSessionStorage();
-  try {
-    const files = readdirSync(SESSION_DIR);
-    let loaded = 0;
-    for (const file of files) {
-      if (file.endsWith(".json") && !file.endsWith(".tmp")) {
-        try {
-          const data = JSON.parse(readFileSync(join(SESSION_DIR, file), "utf-8"));
-          if (Date.now() - data.createdAt <= SESSION_TTL_MS) {
-            const key = Buffer.from(file.replace(".json", ""), "base64").toString();
-            sessions.set(key, data);
-            loaded++;
-          }
-        } catch {
-          // Skip corrupted files
-        }
-      }
-    }
-    if (loaded > 0) {
-      console.log(`Loaded ${loaded} persisted sessions`);
-    }
-  } catch (error) {
-    console.error("Failed to load persisted sessions:", error);
-  }
-}
-
-// Load persisted sessions on module load
-loadAllPersistedSessions();
-
-/**
- * Clean up expired sessions (runs periodically)
- */
-function cleanupExpiredSessions(): void {
-  const now = Date.now();
-  for (const [key, session] of sessions.entries()) {
-    if (now - session.createdAt > SESSION_TTL_MS) {
-      sessions.delete(key);
-      // Also delete persisted file
-      try {
-        const filePath = join(SESSION_DIR, `${Buffer.from(key).toString("base64")}.json`);
-        if (existsSync(filePath)) {
-          unlinkSync(filePath);
-        }
-      } catch {
-        // Ignore cleanup errors
-      }
-      console.log(`Cleaned up expired session: ${key}`);
-    }
-  }
-}
+sessionStore.loadAllPersistedSessions();
 
 // Start periodic cleanup (every hour)
-setInterval(cleanupExpiredSessions, 60 * 60 * 1000);
+setInterval(() => sessionStore.cleanupExpiredSessions(), 60 * 60 * 1000);
 
 /**
  * Get V2 session options configured for MiniMax
@@ -255,7 +164,7 @@ export async function executeSessionQuery(
   const releaseLock = await sessionLock.acquire(sessionKey);
 
   try {
-    const sessionInfo = sessions.get(sessionKey);
+    const sessionInfo = sessionStore.getSession(sessionKey);
 
     // Create or resume session
     const session = sessionInfo
@@ -276,8 +185,7 @@ export async function executeSessionQuery(
           context,
           createdAt: Date.now(),
         };
-        sessions.set(sessionKey, sessionData);
-        persistSession(sessionKey, sessionData);
+        sessionStore.saveSession(sessionKey, sessionData);
       }
 
       // Extract result
@@ -340,7 +248,7 @@ export async function* executeSessionStreaming(
   const releaseLock = await sessionLock.acquire(sessionKey);
 
   try {
-    const sessionInfo = sessions.get(sessionKey);
+  const sessionInfo = sessionStore.getSession(sessionKey);
     const session = sessionInfo
       ? unstable_v2_resumeSession(sessionInfo.sessionId, options)
       : unstable_v2_createSession(options);
@@ -380,16 +288,7 @@ export async function* executeSessionStreaming(
  */
 export function clearSession(context: GitHubContext): void {
   const sessionKey = getSessionKey(context);
-  sessions.delete(sessionKey);
-  // Remove persisted file
-  try {
-    const filePath = join(SESSION_DIR, `${Buffer.from(sessionKey).toString("base64")}.json`);
-    if (existsSync(filePath)) {
-      unlinkSync(filePath);
-    }
-  } catch {
-    // Ignore cleanup errors
-  }
+  sessionStore.deleteSession(sessionKey);
 }
 
 /**
@@ -397,12 +296,12 @@ export function clearSession(context: GitHubContext): void {
  */
 export function getSessionInfo(context: GitHubContext): SessionInfo | undefined {
   const sessionKey = getSessionKey(context);
-  return sessions.get(sessionKey);
+  return sessionStore.getSession(sessionKey);
 }
 
 /**
  * List all active sessions
  */
 export function listSessions(): SessionInfo[] {
-  return Array.from(sessions.values());
+  return sessionStore.listSessions();
 }
