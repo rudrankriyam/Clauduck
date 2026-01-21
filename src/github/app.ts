@@ -9,13 +9,6 @@ import { Octokit } from "@octokit/rest";
 import type { GitHubWebhookPayload } from "../utils/types.js";
 
 /**
- * Import createOctokit from client (avoid circular import)
- */
-function createOctokit(token: string): Octokit {
-  return new Octokit({ auth: token });
-}
-
-/**
  * GitHub App configuration
  */
 export interface AppConfig {
