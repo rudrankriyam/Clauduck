@@ -89,11 +89,10 @@ describe("SessionStore", () => {
   it("removes corrupted session files during load", () => {
     const dir = makeTempDir();
     const key = "owner/repo#4";
-    const filePath = join(dir, `${Buffer.from(key).toString("base64")}.json`);
+    const store = new SessionStore({ dir, ttlMs: 1000, logger: silentLogger });
+    const filePath = store.getSessionFilePath(key);
 
     writeFileSync(filePath, "{not valid json");
-
-    const store = new SessionStore({ dir, ttlMs: 1000, logger: silentLogger });
     expect(() => store.loadAllPersistedSessions()).not.toThrow();
     expect(existsSync(filePath)).toBe(false);
   });

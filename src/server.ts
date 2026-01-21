@@ -128,8 +128,8 @@ function buildGitHubContext(
  */
 function sanitizeError(message: string): string {
   // Remove file paths (Unix and Windows)
-  let sanitized = message.replace(/\/[\w\/.-]+\//g, "[path]/");
-  sanitized = sanitized.replace(/[A-Za-z]:\\[\w\\.-]+\\/g, "[path]\\");
+  let sanitized = message.replace(/\/[\w\/.-]+/g, "[path]");
+  sanitized = sanitized.replace(/[A-Za-z]:\\[\w\\.-]+/g, "[path]");
 
   // Remove error codes and hex dumps
   sanitized = sanitized.replace(/0x[0-9a-fA-F]+/g, "[hex]");
