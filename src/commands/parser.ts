@@ -6,6 +6,9 @@
 
 import type { ParsedCommand, CommandMode } from "../utils/types.js";
 
+const MENTION_REGEX = /@clauduck(?:\[bot\])?(?![\w-])/gi;
+const MENTION_TEST_REGEX = /@clauduck(?:\[bot\])?(?![\w-])/i;
+
 /**
  * Commands that trigger read-only mode
  */
@@ -49,7 +52,7 @@ const WRITE_COMMANDS = [
 export function parseCommand(commentBody: string): ParsedCommand | null {
   // Remove @clauduck mention (with or without [bot])
   const command = commentBody
-    .replace(/@clauduck(\[bot\])?/gi, "")
+    .replace(MENTION_REGEX, "")
     .trim();
 
   if (!command) {
@@ -96,7 +99,7 @@ function determineMode(action: string): CommandMode {
  * Check if a comment body contains a @clauduck mention
  */
 export function hasClauduckMention(commentBody: string): boolean {
-  return /@clauduck(\[bot\])?/gi.test(commentBody);
+  return MENTION_TEST_REGEX.test(commentBody);
 }
 
 /**
@@ -104,8 +107,15 @@ export function hasClauduckMention(commentBody: string): boolean {
  */
 export function extractCommand(commentBody: string): string {
   return commentBody
-    .replace(/@clauduck(\[bot\])?/gi, "")
+    .replace(MENTION_REGEX, "")
     .trim();
+}
+
+/**
+ * Check if command text indicates a stop/cancel request
+ */
+export function isStopCommand(commandText: string): boolean {
+  return /\b(stop|cancel|abort|halt)\b/i.test(commandText);
 }
 
 /**

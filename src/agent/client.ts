@@ -13,6 +13,7 @@ import {
 import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, readdirSync, chmodSync, renameSync } from "fs";
 import { join } from "path";
 import type { CommandMode, GitHubContext, AgentResponse } from "../utils/types.js";
+import { AsyncKeyedLock } from "../utils/async-lock.js";
 
 /**
  * Session storage directory
@@ -53,31 +54,8 @@ interface SessionInfo {
 }
 const sessions = new Map<string, SessionInfo>();
 
-// Session locks for concurrent command handling
-const sessionLocks = new Map<string, Promise<void>>();
-
-/**
- * Acquire lock for a session key, queueing concurrent commands
- */
-async function acquireSessionLock(sessionKey: string): Promise<() => void> {
-  const currentLock = sessionLocks.get(sessionKey);
-
-  if (currentLock) {
-    // Wait for current lock to release
-    await currentLock;
-  }
-
-  // Create new lock promise
-  let releaseFn: () => void;
-  const lockPromise = new Promise<void>((resolve) => {
-    releaseFn = resolve;
-  });
-
-  sessionLocks.set(sessionKey, lockPromise);
-
-  // Return release function
-  return releaseFn!;
-}
+// Session locks for concurrent command handling (per session key)
+const sessionLock = new AsyncKeyedLock();
 
 /**
  * Persist session to disk with secure permissions
@@ -274,7 +252,7 @@ export async function executeSessionQuery(
   const options = getSessionOptions(mode);
 
   // Acquire session lock to prevent concurrent access
-  const releaseLock = await acquireSessionLock(sessionKey);
+  const releaseLock = await sessionLock.acquire(sessionKey);
 
   try {
     const sessionInfo = sessions.get(sessionKey);
@@ -344,7 +322,6 @@ export async function executeSessionQuery(
   } finally {
     // Always release the session lock
     releaseLock();
-    sessionLocks.delete(sessionKey);
   }
 }
 
@@ -360,35 +337,41 @@ export async function* executeSessionStreaming(
   const sessionKey = getSessionKey(context);
   const options = getSessionOptions(mode);
 
-  const sessionInfo = sessions.get(sessionKey);
-  const session = sessionInfo
-    ? unstable_v2_resumeSession(sessionInfo.sessionId, options)
-    : unstable_v2_createSession(options);
+  const releaseLock = await sessionLock.acquire(sessionKey);
 
-  await session.send(prompt);
+  try {
+    const sessionInfo = sessions.get(sessionKey);
+    const session = sessionInfo
+      ? unstable_v2_resumeSession(sessionInfo.sessionId, options)
+      : unstable_v2_createSession(options);
 
-  for await (const message of session.stream()) {
-    if (message.type === "assistant") {
-      const content = message.message.content;
-      if (typeof content === "string") {
-        yield content;
-      } else if (Array.isArray(content)) {
-        for (const block of content) {
-          if (block.type === "text") {
-            yield block.text;
+    await session.send(prompt);
+
+    for await (const message of session.stream()) {
+      if (message.type === "assistant") {
+        const content = message.message.content;
+        if (typeof content === "string") {
+          yield content;
+        } else if (Array.isArray(content)) {
+          for (const block of content) {
+            if (block.type === "text") {
+              yield block.text;
+            }
           }
         }
       }
-    }
 
-    if (message.type === "result") {
-      if (message.subtype === "success") {
-        yield message.result;
-      } else {
-        yield `[Error: ${message.subtype || "Session error"}]`;
-        return;
+      if (message.type === "result") {
+        if (message.subtype === "success") {
+          yield message.result;
+        } else {
+          yield `[Error: ${message.subtype || "Session error"}]`;
+          return;
+        }
       }
     }
+  } finally {
+    releaseLock();
   }
 }
 

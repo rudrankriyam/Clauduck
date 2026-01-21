@@ -6,7 +6,6 @@
  */
 
 import express, { Request, Response, NextFunction } from "express";
-import crypto from "crypto";
 import dotenv from "dotenv";
 
 import { postComment } from "./github/client.js";
@@ -15,9 +14,10 @@ import {
   isGitHubAppConfigured,
   checkPartialAppConfig,
 } from "./github/app.js";
-import { parseCommand } from "./commands/parser.js";
+import { isStopCommand, parseCommand } from "./commands/parser.js";
 import { executeSessionQuery, clearSession } from "./agent/client.js";
 import { GitHubContext, CommandMode, GitHubWebhookPayload } from "./utils/types.js";
+import { parseWebhookPayload, verifyWebhookSignature } from "./utils/webhook.js";
 
 dotenv.config();
 
@@ -100,125 +100,6 @@ function enqueueJob(event: string, payload: GitHubWebhookPayload, deliveryId: st
   processWebhookJob(job).catch(console.error);
 }
 
-/**
- * Verify GitHub webhook signature (HMAC-SHA256)
- */
-function verifyWebhookSignature(
-  payload: string,
-  signature: string | undefined
-): boolean {
-  // Determine which secret to use
-  const webhookSecret = process.env.GITHUB_APP_WEBHOOK_SECRET || process.env.GITHUB_WEBHOOK_SECRET || "";
-
-  // In production, require webhook secret
-  if (!webhookSecret) {
-    const isDevelopment = process.env.NODE_ENV === "development" || process.env.DEBUG === "true";
-    if (isDevelopment) {
-      console.warn("Webhook secret not configured - skipping verification (development mode)");
-      return true;
-    }
-    console.error("Webhook secret not configured - refusing request. Set NODE_ENV=development to skip in development.");
-    return false;
-  }
-
-  if (!signature) {
-    console.error("Missing webhook signature");
-    return false;
-  }
-
-  const expectedSignature = `sha256=${crypto
-    .createHmac("sha256", webhookSecret)
-    .update(payload)
-    .digest("hex")}`;
-
-  if (signature.length !== expectedSignature.length) {
-    console.error("Invalid signature length");
-    return false;
-  }
-
-  try {
-    return crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(expectedSignature)
-    );
-  } catch {
-    console.error("Signature comparison failed");
-    return false;
-  }
-}
-
-/**
- * Parse and validate webhook payload
- */
-function parseWebhookPayload(
-  body: string
-): { success: boolean; data?: object; error?: string } {
-  try {
-    const data = JSON.parse(body.toString());
-
-    // Basic schema validation
-    if (!validateWebhookSchema(data)) {
-      return { success: false, error: "Invalid webhook payload schema" };
-    }
-
-    return { success: true, data };
-  } catch {
-    return { success: false, error: "Invalid JSON payload" };
-  }
-}
-
-/**
- * Validate webhook payload has required fields
- */
-function validateWebhookSchema(data: unknown): data is GitHubWebhookPayload {
-  if (typeof data !== "object" || data === null) {
-    return false;
-  }
-
-  const payload = data as Record<string, unknown>;
-
-  // Check for required nested structure if repository exists
-  if (payload.repository) {
-    const repo = payload.repository as Record<string, unknown>;
-    if (typeof repo.full_name !== "string" || typeof repo.owner !== "object") {
-      return false;
-    }
-    const owner = repo.owner as Record<string, unknown>;
-    if (typeof owner.login !== "string") {
-      return false;
-    }
-  }
-
-  // For issue_comment events, validate comment and issue
-  if (payload.comment && payload.issue) {
-    const comment = payload.comment as Record<string, unknown>;
-    const issue = payload.issue as Record<string, unknown>;
-    if (typeof comment.body !== "string" || typeof comment.id !== "number") {
-      return false;
-    }
-    if (typeof issue.number !== "number") {
-      return false;
-    }
-  }
-
-  // For issues events, validate issue
-  if (payload.issue && !payload.comment) {
-    const issue = payload.issue as Record<string, unknown>;
-    if (typeof issue.number !== "number") {
-      return false;
-    }
-  }
-
-  // For PR events, validate pull_request
-  if (payload.pull_request) {
-    const pr = payload.pull_request as Record<string, unknown>;
-    if (typeof pr.number !== "number") {
-      return false;
-    }
-  }
-
-  return true;
-}
 
 /**
  * Build GitHub context from webhook payload
@@ -526,13 +407,13 @@ async function handleIssueComment(payload: {
     comment.id
   );
 
-  const mentionPattern = /@clauduck(\[[a-z]+\])?/gi;
+  const mentionPattern = /@clauduck(?:\[[a-z]+\])?(?![\w-])/gi;
   if (mentionPattern.test(comment.body)) {
     console.log(`Found @clauduck mention in issue #${issue.number}`);
 
     const commandText = comment.body.replace(mentionPattern, "").trim();
 
-    if (/\b(stop|cancel|abort|halt)\b/i.test(commandText)) {
+    if (isStopCommand(commandText)) {
       await handleStopCommand(context, payload);
       return;
     }
