@@ -81,7 +81,32 @@ npm run build
 npm start
 ```
 
-### Webhook Setup
+### GitHub App Setup (CLI)
+
+Create the GitHub App using the `gh` CLI:
+
+```bash
+# Create the GitHub App
+gh api apps/create \
+  -f name="clauduck" \
+  -f url="https://github.com/rudrankriyam/Clauduck" \
+  -f webhook_active="true" \
+  -f webhook_url="https://your-ngrok.io/webhook" \
+  -f webhook_secret="your-webhook-secret" \
+  -f default_permissions='contents:write,issues:write,pull_requests:write,comments:write' \
+  -f default_events='["issues","issue_comment","pull_request"]'
+```
+
+Save the output - you'll need `GITHUB_APP_ID`.
+
+```bash
+# Generate and download private key
+gh api apps/<APP_ID>/keys -f > github-app-private-key.pem
+```
+
+Copy the key content to `GITHUB_APP_PRIVATE_KEY` in `.env` (escape newlines: `cat github-app-private-key.pem | tr '\n' '\\n'`).
+
+### GitHub App Setup (UI)
 
 1. Create a GitHub App at https://github.com/settings/apps/new
 2. Set the webhook URL to your server (use ngrok for local development)
