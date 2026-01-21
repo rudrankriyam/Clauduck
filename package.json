@@ -1,0 +1,36 @@
+{
+  "name": "clauduck",
+  "version": "1.0.0",
+  "description": "Inspired by Psyduck, an AI contributor to help me with side-projects",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node --esm src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rudrankriyam/Clauduck.git"
+  },
+  "keywords": ["github", "bot", "ai", "claude"],
+  "author": "Rudrank Riyam",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/rudrankriyam/Clauduck/issues"
+  },
+  "homepage": "https://github.com/rudrankriyam/Clauduck#readme",
+  "devDependencies": {
+    "@types/node": "^25.0.9",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.14",
+    "@octokit/app": "^16.1.2",
+    "@octokit/rest": "^22.0.1",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1"
+  }
+}
