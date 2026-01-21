@@ -16,7 +16,7 @@ export function verifyWebhookSignature(
   const webhookSecret = env.GITHUB_APP_WEBHOOK_SECRET || env.GITHUB_WEBHOOK_SECRET || "";
 
   if (!webhookSecret) {
-    const isDevelopment = env.NODE_ENV === "development" || env.DEBUG === "true";
+    const isDevelopment = env.NODE_ENV === "development";
     if (isDevelopment) {
       console.warn("Webhook secret not configured - skipping verification (development mode)");
       return true;

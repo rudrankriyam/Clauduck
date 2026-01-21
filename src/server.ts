@@ -123,6 +123,27 @@ function buildGitHubContext(
 }
 
 /**
+ * Sanitize error message for public display
+ * Removes internal paths, stack traces, and sensitive info
+ */
+function sanitizeError(message: string): string {
+  // Remove file paths (Unix and Windows)
+  let sanitized = message.replace(/\/[\w\/.-]+\//g, "[path]/");
+  sanitized = sanitized.replace(/[A-Za-z]:\\[\w\\.-]+\\/g, "[path]\\");
+
+  // Remove error codes and hex dumps
+  sanitized = sanitized.replace(/0x[0-9a-fA-F]+/g, "[hex]");
+  sanitized = sanitized.replace(/ERR_[\w]+/g, "[error]");
+
+  // Truncate if still too long
+  if (sanitized.length > 500) {
+    sanitized = sanitized.slice(0, 500) + "...";
+  }
+
+  return sanitized;
+}
+
+/**
  * Process a @clauduck command and post result back to GitHub
  */
 async function processCommand(
@@ -180,7 +201,7 @@ async function processCommand(
         context.owner,
         context.repo,
         context.issueNumber,
-        `Error: ${result.error || "Unknown error"}`
+        `Error: ${sanitizeError(result.error || "Unknown error")}`
       );
     }
   } catch (error) {
@@ -192,7 +213,7 @@ async function processCommand(
           context.owner,
           context.repo,
           context.issueNumber,
-          `Error processing command: ${error instanceof Error ? error.message : "Unknown error"}`
+          `Error processing command: ${sanitizeError(error instanceof Error ? error.message : "Unknown error")}`
         );
       } catch {
         console.error("Failed to post error comment");

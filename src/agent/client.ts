@@ -48,7 +48,14 @@ const sessionLock = new AsyncKeyedLock();
 sessionStore.loadAllPersistedSessions();
 
 // Start periodic cleanup (every hour)
-setInterval(() => sessionStore.cleanupExpiredSessions(), 60 * 60 * 1000);
+const cleanupInterval = setInterval(() => sessionStore.cleanupExpiredSessions(), 60 * 60 * 1000);
+
+/**
+ * Shutdown function to clean up resources
+ */
+export function shutdown(): void {
+  clearInterval(cleanupInterval);
+}
 
 /**
  * Get V2 session options configured for MiniMax
@@ -248,7 +255,7 @@ export async function* executeSessionStreaming(
   const releaseLock = await sessionLock.acquire(sessionKey);
 
   try {
-  const sessionInfo = sessionStore.getSession(sessionKey);
+    const sessionInfo = sessionStore.getSession(sessionKey);
     const session = sessionInfo
       ? unstable_v2_resumeSession(sessionInfo.sessionId, options)
       : unstable_v2_createSession(options);
@@ -256,6 +263,17 @@ export async function* executeSessionStreaming(
     await session.send(prompt);
 
     for await (const message of session.stream()) {
+      // Capture session ID for future resume
+      if (message.type === "system" && message.subtype === "init") {
+        const sessionId = message.session_id;
+        const sessionData = {
+          sessionId,
+          context,
+          createdAt: Date.now(),
+        };
+        sessionStore.saveSession(sessionKey, sessionData);
+      }
+
       if (message.type === "assistant") {
         const content = message.message.content;
         if (typeof content === "string") {

@@ -51,7 +51,20 @@ export class SessionStore {
   }
 
   getSessionFilePath(key: string): string {
-    return join(this.dir, `${Buffer.from(key).toString("base64")}.json`);
+    return join(this.dir, `${this.toBase64Url(key)}.json`);
+  }
+
+  private toBase64Url(input: string): string {
+    return Buffer.from(input).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+  }
+
+  private fromBase64Url(input: string): string {
+    let base64 = input.replace(/-/g, "+").replace(/_/g, "/");
+    // Add padding if needed
+    while (base64.length % 4 !== 0) {
+      base64 += "=";
+    }
+    return Buffer.from(base64, "base64").toString("utf-8");
   }
 
   saveSession(key: string, session: SessionInfo): void {
@@ -107,7 +120,7 @@ export class SessionStore {
           try {
             const data = JSON.parse(readFileSync(filePath, "utf-8")) as SessionInfo;
             if (Date.now() - data.createdAt <= this.ttlMs) {
-              const key = Buffer.from(file.replace(".json", ""), "base64").toString();
+              const key = this.fromBase64Url(file.replace(".json", ""));
               this.sessions.set(key, data);
               loaded++;
             } else {
@@ -155,7 +168,7 @@ export class SessionStore {
 
   private cleanupTempFilesForKey(key: string): void {
     try {
-      const baseName = `${Buffer.from(key).toString("base64")}.json`;
+      const baseName = `${this.toBase64Url(key)}.json`;
       const files = readdirSync(this.dir);
       for (const file of files) {
         if (file.startsWith(`${baseName}.`) && file.endsWith(".tmp")) {
