@@ -5,6 +5,17 @@ const LOW_REMAINING_THRESHOLD = 100;
 const LOW_REMAINING_DELAY_MS = 200;
 const SECONDARY_RATE_LIMIT_BASE_DELAY_MS = 5000;
 
+function toHeaderNumber(value: string | number | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value === "number") {
+    return value;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? undefined : parsed;
+}
+
 export class GitHubRateLimiter {
   private remaining = DEFAULT_REMAINING;
   private resetAt = new Date(0);
@@ -15,15 +26,15 @@ export class GitHubRateLimiter {
     const resetHeader = headers["x-ratelimit-reset"];
 
     if (remainingHeader !== undefined) {
-      const remaining = Number.parseInt(remainingHeader, 10);
-      if (!Number.isNaN(remaining)) {
+      const remaining = toHeaderNumber(remainingHeader);
+      if (remaining !== undefined) {
         this.remaining = remaining;
       }
     }
 
     if (resetHeader !== undefined) {
-      const reset = Number.parseInt(resetHeader, 10);
-      if (!Number.isNaN(reset)) {
+      const reset = toHeaderNumber(resetHeader);
+      if (reset !== undefined) {
         this.resetAt = new Date(reset * 1000);
       }
       if (remainingHeader === undefined) {
@@ -88,17 +99,17 @@ export class GitHubRateLimiter {
         }
 
         if (status === 403) {
-          const retryAfter = headers["retry-after"];
-          const remainingHeader = headers["x-ratelimit-remaining"];
-          const resetHeader = headers["x-ratelimit-reset"];
+          const retryAfter = toHeaderNumber(headers["retry-after"]);
+          const remainingHeader = toHeaderNumber(headers["x-ratelimit-remaining"]);
+          const resetHeader = toHeaderNumber(headers["x-ratelimit-reset"]);
 
-          if (retryAfter) {
+          if (retryAfter !== undefined) {
             this.updateFromHeaders(headers);
-            await this.sleep(Number.parseInt(retryAfter, 10) * 1000);
+            await this.sleep(retryAfter * 1000);
             continue;
           }
 
-          if (remainingHeader === "0" && resetHeader) {
+          if (remainingHeader === 0 && resetHeader !== undefined) {
             this.updateFromHeaders(headers);
             await this.waitIfNeeded();
             continue;

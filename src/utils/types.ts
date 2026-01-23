@@ -78,10 +78,10 @@ export interface GitHubWebhookPayload {
  * GitHub API response headers (relevant rate limit fields)
  */
 export interface GitHubApiHeaders {
-  "x-ratelimit-remaining"?: string;
-  "x-ratelimit-reset"?: string;
-  "retry-after"?: string;
-  [key: string]: string | undefined;
+  "x-ratelimit-remaining"?: string | number;
+  "x-ratelimit-reset"?: string | number;
+  "retry-after"?: string | number;
+  [key: string]: string | number | undefined;
 }
 
 /**
