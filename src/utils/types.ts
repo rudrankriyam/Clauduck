@@ -7,6 +7,9 @@
  */
 export type CommandMode = "read" | "write";
 
+export type AgentProvider = "claude" | "codex";
+export type ProviderOverride = AgentProvider | "minimax" | "anthropic";
+
 /**
  * Parsed command from @clauduck mention
  */
@@ -15,6 +18,7 @@ export interface ParsedCommand {
   action: string;
   target: string;
   original: string;
+  provider?: ProviderOverride;
 }
 
 /**

@@ -5,6 +5,7 @@
  */
 
 import { Octokit } from "@octokit/rest";
+import { rateLimiter } from "./rate-limiter.js";
 
 /**
  * Create an Octokit client
@@ -50,19 +51,23 @@ export async function createBranch(
   sourceBranch: string
 ): Promise<void> {
   // Get source branch SHA
-  const refData = await octokit.rest.git.getRef({
-    owner,
-    repo,
-    ref: `heads/${sourceBranch}`,
-  });
+  const refData = await rateLimiter.executeWithRetry(() =>
+    octokit.rest.git.getRef({
+      owner,
+      repo,
+      ref: `heads/${sourceBranch}`,
+    })
+  );
 
   // Create new branch
-  await octokit.rest.git.createRef({
-    owner,
-    repo,
-    ref: `refs/heads/${branchName}`,
-    sha: refData.data.object.sha,
-  });
+  await rateLimiter.executeWithRetry(() =>
+    octokit.rest.git.createRef({
+      owner,
+      repo,
+      ref: `refs/heads/${branchName}`,
+      sha: refData.object.sha,
+    })
+  );
 }
 
 /**
@@ -162,18 +167,14 @@ export async function getDefaultBranch(
  * Get rate limiter status for monitoring
  */
 export function getRateLimitStatus() {
-  return {
-    remaining: 5000,
-    resetAt: new Date(),
-    delay: 100,
-  };
+  return rateLimiter.getStatus();
 }
 
 /**
  * Reset rate limiter
  */
 export function resetRateLimiter() {
-  // No-op with simplified rate limiting
+  rateLimiter.reset();
 }
 
 /**

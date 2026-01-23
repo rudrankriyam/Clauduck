@@ -40,6 +40,22 @@ describe("command parser", () => {
     expect(result?.mode).toBe("read");
   });
 
+  it("parses provider flag with equals syntax", () => {
+    const result = parseCommand("@clauduck review --provider=codex");
+    expect(result).not.toBeNull();
+    expect(result?.action).toBe("review");
+    expect(result?.target).toBe("");
+    expect(result?.provider).toBe("codex");
+  });
+
+  it("parses provider flag with space syntax", () => {
+    const result = parseCommand("@clauduck fix flaky test --provider claude");
+    expect(result).not.toBeNull();
+    expect(result?.action).toBe("fix");
+    expect(result?.target).toBe("flaky test");
+    expect(result?.provider).toBe("claude");
+  });
+
   it("returns null when only mention exists", () => {
     const result = parseCommand("@clauduck");
     expect(result).toBeNull();

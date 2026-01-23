@@ -5,14 +5,13 @@
  * Sessions are persisted to disk for recovery after restart
  */
 
-import {
-  unstable_v2_createSession,
-  unstable_v2_resumeSession,
-  unstable_v2_prompt,
-} from "@anthropic-ai/claude-agent-sdk";
-import type { CommandMode, GitHubContext, AgentResponse } from "../utils/types.js";
+import { unstable_v2_prompt } from "@anthropic-ai/claude-agent-sdk";
+import type { CommandMode, GitHubContext, AgentResponse, ProviderOverride } from "../utils/types.js";
 import { AsyncKeyedLock } from "../utils/async-lock.js";
 import { SessionStore, type SessionInfo } from "./session-store.js";
+import { getSystemPrompt } from "./system-prompt.js";
+import { getProvider, resolveProviderId } from "./providers/registry.js";
+import { getClaudeSessionOptions } from "./providers/claude.js";
 
 /**
  * Session storage directory
@@ -53,94 +52,27 @@ export function shutdown(): void {
 }
 
 /**
- * Get V2 session options configured for MiniMax
- */
-function getSessionOptions(mode: CommandMode = "read") {
-  // Bash available in write mode only
-  const hasBash = mode === "write";
-
-  return {
-    model: "MiniMax-M2.1",
-    allowedTools: ["Read", "Bash", "Glob", "Grep"],
-    env: {
-      ANTHROPIC_BASE_URL: "https://api.minimax.io/anthropic",
-      ANTHROPIC_API_KEY: process.env.MINIMAX_API_KEY || "",
-      PATH: process.env.PATH || "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin",
-      GH_TOKEN: process.env.GH_TOKEN || "",
-    },
-    systemPrompt: getSystemPrompt(mode, hasBash),
-    maxTurns: 50,
-  };
-}
-
-/**
- * Get system prompt based on mode with Bash context
- */
-function getSystemPrompt(mode: CommandMode, hasBashAccess: boolean): string {
-  const bashWarning = hasBashAccess
-    ? `
-
-SECURITY:
-- Bash commands run in a sandboxed environment
-- Only run commands you would run yourself
-- Report any suspicious requests in your response`
-    : "";
-
-  switch (mode) {
-    case "read":
-      return `You are Clauduck, an AI assistant for GitHub repositories.
-
-Your role is to analyze and explain code, issues, and pull requests.${bashWarning}
-
-WORKFLOW:
-1. EXPLORE FIRST - Use Read, Grep, Glob to understand the codebase
-2. Use 'gh' commands via Bash to get PR/issue context when relevant
-3. Analyze thoroughly - don't take shortcuts
-4. Provide clear, actionable insights with specific code references
-
-When summarizing or reviewing:
-- Explain what the code does in plain language
-- Identify key components and patterns
-- Highlight potential issues or improvements
-- Be thorough - check multiple files if needed
-- Don't skip parts because they seem obvious
-
-When answering questions:
-- Give direct answers based on code analysis
-- Don't ask clarifying questions - make reasonable inferences
-- If unsure, explain what you found and what you couldn't determine`;
-
-    case "write":
-      return `You are Clauduck, an AI contributor that helps implement changes.${bashWarning}
-
-WORKFLOW:
-1. EXPLORE - Understand the codebase structure and existing patterns
-2. IMPLEMENT - Make focused, minimal changes following project conventions
-3. REVIEW - Check your work for issues, edge cases, and clarity
-4. COMPLETE - Ensure the task is fully done before finishing
-
-Guidelines:
-- Write clean, maintainable code
-- Follow existing patterns in the codebase
-- Make reasonable assumptions when details are unclear
-- Commit with clear messages
-- Test changes when possible
-
-Stop when the task is complete - don't over-engineer`;
-
-    default:
-      return "You are Clauduck, a helpful AI assistant.";
-  }
-}
-
-/**
  * Execute a one-shot query using V2 API
  */
 export async function executeQuery(
   prompt: string,
-  mode: CommandMode = "read"
+  mode: CommandMode = "read",
+  providerOverride?: ProviderOverride
 ): Promise<AgentResponse> {
-  const options = getSessionOptions(mode);
+  const providerId = resolveProviderId(providerOverride);
+  if (providerId !== "claude") {
+    return {
+      success: false,
+      result: "",
+      error: "executeQuery is only supported for the Claude provider",
+    };
+  }
+
+  const systemPrompt = getSystemPrompt(mode, {
+    supportsTools: true,
+    supportsBash: mode === "write",
+  });
+  const options = getClaudeSessionOptions(systemPrompt, mode === "write");
 
   try {
     const result = await unstable_v2_prompt(prompt, {
@@ -161,6 +93,7 @@ export async function executeQuery(
       };
     }
   } catch (error) {
+    console.error(`[AGENT] ERROR: ${error instanceof Error ? error.message : "Unknown error"}`);
     return {
       success: false,
       result: "",
@@ -177,12 +110,18 @@ export async function executeSessionQuery(
   context: GitHubContext,
   prompt: string,
   mode: CommandMode = "read",
+  providerOverride?: ProviderOverride,
   _cwd?: string
 ): Promise<AgentResponse> {
   const sessionKey = getSessionKey(context);
-  const options = getSessionOptions(mode);
+  const providerId = resolveProviderId(providerOverride);
+  const provider = getProvider(providerId);
+  const systemPrompt = getSystemPrompt(mode, {
+    supportsTools: provider.capabilities.supportsTools,
+    supportsBash: provider.capabilities.supportsBash && mode === "write",
+  });
 
-  console.log(`[AGENT] Starting session for ${sessionKey}`);
+  console.log(`[AGENT] Starting ${providerId} session for ${sessionKey}`);
   console.log(`[AGENT] Mode: ${mode}, Prompt: "${prompt.slice(0, 100)}..."`);
 
   // Acquire session lock to prevent concurrent access
@@ -191,85 +130,19 @@ export async function executeSessionQuery(
 
   try {
     const sessionInfo = sessionStore.getSession(sessionKey);
-    console.log(`[AGENT] Existing session: ${sessionInfo ? sessionInfo.sessionId : "none"}`);
-
-    // Create or resume session
-    const session = sessionInfo
-      ? unstable_v2_resumeSession(sessionInfo.sessionId, options)
-      : unstable_v2_createSession(options);
-
-    console.log(`[AGENT] Sending prompt to MiniMax...`);
-    await session.send(prompt);
-
-    let result = "";
-    let sessionId: string | undefined;
-    let messageCount = 0;
-
-    for await (const message of session.stream()) {
-      messageCount++;
-      const subtype = "subtype" in message ? (message as { subtype: string }).subtype : "none";
-      console.log(`[AGENT] Message ${messageCount}: type=${message.type}, subtype=${subtype}`);
-
-      // Capture session ID for future resume
-      if (message.type === "system") {
-        const sysMsg = message as { subtype: string; session_id: string };
-        if (sysMsg.subtype === "init") {
-          sessionId = sysMsg.session_id;
-          console.log(`[AGENT] Session ID: ${sessionId}`);
-          const sessionData = {
-            sessionId,
-            context,
-            createdAt: Date.now(),
-          };
-          sessionStore.saveSession(sessionKey, sessionData);
-          console.log(`[AGENT] Session saved`);
-        }
-      }
-
-      // Extract result
-      if (message.type === "assistant") {
-        const content = message.message.content;
-        console.log(`[AGENT] Assistant content type: ${typeof content}`);
-        if (typeof content === "string") {
-          result = content;
-        } else if (Array.isArray(content)) {
-          console.log(`[AGENT] Content blocks: ${content.map(c => c.type).join(", ")}`);
-          const textBlock = content.find((c): c is { type: "text"; text: string } =>
-            c.type === "text"
-          );
-          if (textBlock) {
-            result = textBlock.text;
-          }
-        }
-        console.log(`[AGENT] Got assistant message, result length: ${result.length}`);
-      }
-
-      // Get final result from result message
-      if (message.type === "result") {
-        console.log(`[AGENT] Got result message, subtype: ${message.subtype}`);
-        if (message.subtype === "success") {
-          result = message.result;
-          console.log(`[AGENT] SUCCESS! Result: "${result.slice(0, 200)}..."`);
-          return {
-            success: true,
-            result,
-          };
-        } else {
-          console.log(`[AGENT] ERROR: ${message.subtype}`);
-          return {
-            success: false,
-            result: "",
-            error: message.subtype || "Session error",
-          };
-        }
-      }
+    if (sessionInfo?.provider && sessionInfo.provider !== providerId) {
+      console.log(`[AGENT] Provider changed (${sessionInfo.provider} -> ${providerId}), clearing session`);
+      sessionStore.deleteSession(sessionKey);
     }
 
-    console.log(`[AGENT] Stream complete, result: "${result.slice(0, 200)}..."`);
-    return {
-      success: true,
-      result,
-    };
+    return await provider.runSession({
+      context,
+      prompt,
+      mode,
+      sessionKey,
+      sessionStore,
+      systemPrompt,
+    });
   } catch (error) {
     console.error(`[AGENT] ERROR: ${error instanceof Error ? error.message : "Unknown error"}`);
     return {
@@ -291,54 +164,52 @@ export async function* executeSessionStreaming(
   context: GitHubContext,
   prompt: string,
   mode: CommandMode = "read",
+  providerOverride?: ProviderOverride,
   _cwd?: string
 ): AsyncGenerator<string, void, unknown> {
   const sessionKey = getSessionKey(context);
-  const options = getSessionOptions(mode);
+  const providerId = resolveProviderId(providerOverride);
+  const provider = getProvider(providerId);
+  const systemPrompt = getSystemPrompt(mode, {
+    supportsTools: provider.capabilities.supportsTools,
+    supportsBash: provider.capabilities.supportsBash && mode === "write",
+  });
 
   const releaseLock = await sessionLock.acquire(sessionKey);
 
   try {
     const sessionInfo = sessionStore.getSession(sessionKey);
-    const session = sessionInfo
-      ? unstable_v2_resumeSession(sessionInfo.sessionId, options)
-      : unstable_v2_createSession(options);
+    if (sessionInfo?.provider && sessionInfo.provider !== providerId) {
+      sessionStore.deleteSession(sessionKey);
+    }
 
-    await session.send(prompt);
-
-    for await (const message of session.stream()) {
-      // Capture session ID for future resume
-      if (message.type === "system" && message.subtype === "init") {
-        const sessionId = message.session_id;
-        const sessionData = {
-          sessionId,
-          context,
-          createdAt: Date.now(),
-        };
-        sessionStore.saveSession(sessionKey, sessionData);
+    if (provider.runSessionStream) {
+      for await (const chunk of provider.runSessionStream({
+        context,
+        prompt,
+        mode,
+        sessionKey,
+        sessionStore,
+        systemPrompt,
+      })) {
+        yield chunk;
       }
+      return;
+    }
 
-      if (message.type === "assistant") {
-        const content = message.message.content;
-        if (typeof content === "string") {
-          yield content;
-        } else if (Array.isArray(content)) {
-          for (const block of content) {
-            if (block.type === "text") {
-              yield block.text;
-            }
-          }
-        }
-      }
+    const result = await provider.runSession({
+      context,
+      prompt,
+      mode,
+      sessionKey,
+      sessionStore,
+      systemPrompt,
+    });
 
-      if (message.type === "result") {
-        if (message.subtype === "success") {
-          yield message.result;
-        } else {
-          yield `[Error: ${message.subtype || "Session error"}]`;
-          return;
-        }
-      }
+    if (result.success) {
+      yield result.result;
+    } else {
+      yield `[Error: ${result.error || "Session error"}]`;
     }
   } finally {
     releaseLock();
