@@ -4,7 +4,7 @@
  * Parses @clauduck commands from issue comments and determines the action
  */
 
-import type { ParsedCommand, CommandMode } from "../utils/types.js";
+import type { ParsedCommand, CommandMode, ProviderOverride } from "../utils/types.js";
 
 const MENTION_REGEX = /@clauduck(?:\[bot\])?(?![\w-])/gi;
 const MENTION_TEST_REGEX = /@clauduck(?:\[bot\])?(?![\w-])/i;
@@ -51,16 +51,16 @@ const WRITE_COMMANDS = [
  */
 export function parseCommand(commentBody: string): ParsedCommand | null {
   // Remove @clauduck mention (with or without [bot])
-  const command = commentBody
-    .replace(MENTION_REGEX, "")
-    .trim();
+  const command = commentBody.replace(MENTION_REGEX, "").trim();
 
   if (!command) {
     return null;
   }
 
+  const { cleaned, provider } = extractProviderFlag(command);
+
   // Extract action and target
-  const words = command.toLowerCase().split(/\s+/);
+  const words = cleaned.toLowerCase().split(/\s+/);
   const action = words[0] || "";
   const target = words.slice(1).join(" ") || "";
 
@@ -72,6 +72,7 @@ export function parseCommand(commentBody: string): ParsedCommand | null {
     action,
     target,
     original: command,
+    provider,
   };
 }
 
@@ -109,6 +110,21 @@ export function extractCommand(commentBody: string): string {
   return commentBody
     .replace(MENTION_REGEX, "")
     .trim();
+}
+
+function extractProviderFlag(command: string): { cleaned: string; provider?: ProviderOverride } {
+  const match = command.match(/(?:^|\s)--provider(?:=|\s+)([a-zA-Z0-9_-]+)/i);
+  if (!match) {
+    return { cleaned: command };
+  }
+
+  const provider = match[1].toLowerCase() as ProviderOverride;
+  const cleaned = command
+    .replace(match[0], " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  return { cleaned, provider };
 }
 
 /**

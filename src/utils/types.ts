@@ -7,6 +7,9 @@
  */
 export type CommandMode = "read" | "write";
 
+export type AgentProvider = "claude" | "codex";
+export type ProviderOverride = AgentProvider | "minimax" | "anthropic";
+
 /**
  * Parsed command from @clauduck mention
  */
@@ -15,6 +18,7 @@ export interface ParsedCommand {
   action: string;
   target: string;
   original: string;
+  provider?: ProviderOverride;
 }
 
 /**
@@ -74,10 +78,10 @@ export interface GitHubWebhookPayload {
  * GitHub API response headers (relevant rate limit fields)
  */
 export interface GitHubApiHeaders {
-  "x-ratelimit-remaining"?: string;
-  "x-ratelimit-reset"?: string;
-  "retry-after"?: string;
-  [key: string]: string | undefined;
+  "x-ratelimit-remaining"?: string | number;
+  "x-ratelimit-reset"?: string | number;
+  "retry-after"?: string | number;
+  [key: string]: string | number | undefined;
 }
 
 /**

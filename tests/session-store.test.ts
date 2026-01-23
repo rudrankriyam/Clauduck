@@ -27,7 +27,7 @@ describe("SessionStore", () => {
     const dir = makeTempDir();
     const store = new SessionStore({ dir, ttlMs: 1000, logger: silentLogger });
     const key = "owner/repo#1";
-    const session = { sessionId: "s1", context: baseContext, createdAt: Date.now() };
+    const session = { sessionId: "s1", context: baseContext, createdAt: Date.now(), provider: "claude" };
 
     store.saveSession(key, session);
 
@@ -38,7 +38,7 @@ describe("SessionStore", () => {
   it("loads sessions within TTL", () => {
     const dir = makeTempDir();
     const key = "owner/repo#1";
-    const session = { sessionId: "s2", context: baseContext, createdAt: Date.now() };
+    const session = { sessionId: "s2", context: baseContext, createdAt: Date.now(), provider: "claude" };
 
     const store = new SessionStore({ dir, ttlMs: 10_000, logger: silentLogger });
     store.saveSession(key, session);
@@ -56,6 +56,7 @@ describe("SessionStore", () => {
       sessionId: "expired",
       context: baseContext,
       createdAt: Date.now() - 2000,
+      provider: "claude",
     };
 
     const store = new SessionStore({ dir, ttlMs: 1000, logger: silentLogger });
@@ -75,6 +76,7 @@ describe("SessionStore", () => {
       sessionId: "expired",
       context: baseContext,
       createdAt: Date.now() - 2000,
+      provider: "claude",
     };
 
     const store = new SessionStore({ dir, ttlMs: 1000, logger: silentLogger });
@@ -106,7 +108,7 @@ describe("SessionStore", () => {
 
     writeFileSync(tempPath, "temp");
 
-    const session = { sessionId: "s5", context: baseContext, createdAt: Date.now() };
+    const session = { sessionId: "s5", context: baseContext, createdAt: Date.now(), provider: "claude" };
     store.saveSession(key, session);
 
     expect(existsSync(tempPath)).toBe(false);

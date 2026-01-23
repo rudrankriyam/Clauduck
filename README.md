@@ -1,6 +1,6 @@
 # Clauduck
 
-Inspired by Psyduck, Clauduck is a GitHub bot that helps you with your repositories using AI. Powered by MiniMax M2.1 via the Claude Agent SDK.
+Inspired by Psyduck, Clauduck is a GitHub bot that helps you with your repositories using AI. Powered by MiniMax M2.1 via the Claude Agent SDK by default, with optional Codex SDK support.
 
 ## Features
 
@@ -10,6 +10,7 @@ Inspired by Psyduck, Clauduck is a GitHub bot that helps you with your repositor
 - **Implement Mode** - Fix bugs, add features, create branches and PRs
 - **Comment Polling** - Detects stop/cancel commands during processing
 - **MiniMax M2.1** - Uses Anthropic-compatible API endpoint
+- **Multi-provider** - Swap between Claude Agent SDK and Codex SDK
 
 ## Commands
 
@@ -18,6 +19,9 @@ Inspired by Psyduck, Clauduck is a GitHub bot that helps you with your repositor
 - `@clauduck review this PR` - Review code changes
 - `@clauduck explain the bug` - Explain an issue in detail
 - `@clauduck help` - Show available commands
+
+Optional provider override:
+- `@clauduck review this PR --provider=codex`
 
 ### Implementation Commands
 - `@clauduck fix the bug` - Implement a fix
@@ -55,6 +59,14 @@ cp .env.example .env
 ```env
 # MiniMax API (Anthropic-compatible endpoint)
 MINIMAX_API_KEY=your-minimax-api-key
+
+# Provider selection (claude | codex)
+AI_PROVIDER=claude
+
+# Codex SDK
+CODEX_API_KEY=your-codex-api-key
+# Optional: override Codex/OpenAI base URL
+OPENAI_BASE_URL=
 
 # GitHub Token (for development/testing)
 GITHUB_TOKEN=your-github-token

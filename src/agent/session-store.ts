@@ -13,12 +13,13 @@ import {
   writeFileSync,
 } from "fs";
 import { join } from "path";
-import type { GitHubContext } from "../utils/types.js";
+import type { GitHubContext, AgentProvider } from "../utils/types.js";
 
 export interface SessionInfo {
   sessionId: string;
   context: GitHubContext;
   createdAt: number;
+  provider?: AgentProvider;
 }
 
 interface SessionStoreOptions {
