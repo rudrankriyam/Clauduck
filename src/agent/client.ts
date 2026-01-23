@@ -130,8 +130,9 @@ export async function executeSessionQuery(
 
   try {
     const sessionInfo = sessionStore.getSession(sessionKey);
-    if (sessionInfo?.provider && sessionInfo.provider !== providerId) {
-      console.log(`[AGENT] Provider changed (${sessionInfo.provider} -> ${providerId}), clearing session`);
+    if (sessionInfo && (sessionInfo.provider ?? "claude") !== providerId) {
+      const existingProvider = sessionInfo.provider ?? "claude";
+      console.log(`[AGENT] Provider changed (${existingProvider} -> ${providerId}), clearing session`);
       sessionStore.deleteSession(sessionKey);
     }
 
@@ -179,7 +180,7 @@ export async function* executeSessionStreaming(
 
   try {
     const sessionInfo = sessionStore.getSession(sessionKey);
-    if (sessionInfo?.provider && sessionInfo.provider !== providerId) {
+    if (sessionInfo && (sessionInfo.provider ?? "claude") !== providerId) {
       sessionStore.deleteSession(sessionKey);
     }
 
