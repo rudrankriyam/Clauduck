@@ -1,13 +1,13 @@
 /**
- * Clauduck - Command Parser
+ * CodeDuck - Command Parser
  *
- * Parses @clauduck commands from issue comments and determines the action
+ * Parses @codeduck commands from issue comments and determines the action
  */
 
 import type { ParsedCommand, CommandMode, ProviderOverride } from "../utils/types.js";
 
-const MENTION_REGEX = /@clauduck(?:\[bot\])?(?![\w-])/gi;
-const MENTION_TEST_REGEX = /@clauduck(?:\[bot\])?(?![\w-])/i;
+const MENTION_REGEX = /@codeduck(?:\[bot\])?(?![\w-])/gi;
+const MENTION_TEST_REGEX = /@codeduck(?:\[bot\])?(?![\w-])/i;
 
 /**
  * Commands that trigger read-only mode
@@ -41,16 +41,16 @@ const WRITE_COMMANDS = [
 ];
 
 /**
- * Parse a @clauduck command from a comment body
+ * Parse a @codeduck command from a comment body
  *
  * Examples:
- * - "@clauduck summarize this"
- * - "@clauduck fix the bug in auth.py"
- * - "@clauduck help"
- * - "@clauduck review this PR"
+ * - "@codeduck summarize this"
+ * - "@codeduck fix the bug in auth.py"
+ * - "@codeduck help"
+ * - "@codeduck review this PR"
  */
 export function parseCommand(commentBody: string): ParsedCommand | null {
-  // Remove @clauduck mention (with or without [bot])
+  // Remove @codeduck mention (with or without [bot])
   const command = commentBody.replace(MENTION_REGEX, "").trim();
 
   if (!command) {
@@ -97,14 +97,14 @@ function determineMode(action: string): CommandMode {
 }
 
 /**
- * Check if a comment body contains a @clauduck mention
+ * Check if a comment body contains a @codeduck mention
  */
-export function hasClauduckMention(commentBody: string): boolean {
+export function hasCodeDuckMention(commentBody: string): boolean {
   return MENTION_TEST_REGEX.test(commentBody);
 }
 
 /**
- * Extract the full command text after @clauduck
+ * Extract the full command text after @codeduck
  */
 export function extractCommand(commentBody: string): string {
   return commentBody

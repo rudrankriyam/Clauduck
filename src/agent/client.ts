@@ -1,5 +1,5 @@
 /**
- * Clauduck - Claude Agent SDK Integration (V2 Session API)
+ * CodeDuck - Claude Agent SDK Integration (V2 Session API)
  *
  * Uses unstable_v2_* session-based API for better multi-turn context
  * Sessions are persisted to disk for recovery after restart
@@ -16,7 +16,7 @@ import { getClaudeSessionOptions } from "./providers/claude.js";
 /**
  * Session storage directory
  */
-const SESSION_DIR = process.env.SESSION_DIR || "/tmp/clauduck-sessions";
+const SESSION_DIR = process.env.SESSION_DIR || "/tmp/codeduck-sessions";
 
 /**
  * Session key for tracking sessions per issue/PR

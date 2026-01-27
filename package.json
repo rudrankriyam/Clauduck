@@ -1,5 +1,5 @@
 {
-  "name": "clauduck",
+  "name": "codeduck",
   "version": "1.0.0",
   "description": "Inspired by Psyduck, an AI contributor to help me with side-projects",
   "main": "dist/index.js",
@@ -15,20 +15,20 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rudrankriyam/Clauduck.git"
+    "url": "git+https://github.com/rudrankriyam/CodeDuck.git"
   },
   "keywords": [
     "github",
     "bot",
     "ai",
-    "claude"
+    "codeduck"
   ],
   "author": "Rudrank Riyam",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/rudrankriyam/Clauduck/issues"
+    "url": "https://github.com/rudrankriyam/CodeDuck/issues"
   },
-  "homepage": "https://github.com/rudrankriyam/Clauduck#readme",
+  "homepage": "https://github.com/rudrankriyam/CodeDuck#readme",
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "@types/express": "^5.0.6",

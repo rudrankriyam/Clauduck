@@ -1,11 +1,11 @@
-# Clauduck
+# CodeDuck
 
-Inspired by Psyduck, Clauduck is a GitHub bot that helps you with your repositories using AI. Powered by MiniMax M2.1 via the Claude Agent SDK by default, with optional Codex SDK support.
+Inspired by Psyduck, CodeDuck is a GitHub bot that helps you with your repositories using AI. Powered by MiniMax M2.1 via the Claude Agent SDK by default, with optional Codex SDK support.
 
 ## Features
 
 - **GitHub App Integration** - Receives webhooks for issues, PRs, and comments
-- **Command Parsing** - Understands `@clauduck` commands
+- **Command Parsing** - Understands `@codeduck` commands
 - **Read Mode** - Summarize, review, explain issues and PRs
 - **Implement Mode** - Fix bugs, add features, create branches and PRs
 - **Comment Polling** - Detects stop/cancel commands during processing
@@ -15,19 +15,19 @@ Inspired by Psyduck, Clauduck is a GitHub bot that helps you with your repositor
 ## Commands
 
 ### Read-Only Commands
-- `@clauduck summarize this` - Summarize an issue or PR
-- `@clauduck review this PR` - Review code changes
-- `@clauduck explain the bug` - Explain an issue in detail
-- `@clauduck help` - Show available commands
+- `@codeduck summarize this` - Summarize an issue or PR
+- `@codeduck review this PR` - Review code changes
+- `@codeduck explain the bug` - Explain an issue in detail
+- `@codeduck help` - Show available commands
 
 Optional provider override:
-- `@clauduck review this PR --provider=codex`
+- `@codeduck review this PR --provider=codex`
 
 ### Implementation Commands
-- `@clauduck fix the bug` - Implement a fix
-- `@clauduck add new feature` - Add new functionality
-- `@clauduck implement feature` - Implement a feature request
-- `@clauduck refactor code` - Refactor existing code
+- `@codeduck fix the bug` - Implement a fix
+- `@codeduck add new feature` - Add new functionality
+- `@codeduck implement feature` - Implement a feature request
+- `@codeduck refactor code` - Refactor existing code
 
 ## Setup
 
