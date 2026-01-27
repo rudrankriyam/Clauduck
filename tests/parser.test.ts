@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   parseCommand,
-  hasCodeduckMention,
+  hasCodeDuckMention,
   extractCommand,
   getModeDescription,
   isStopCommand,
@@ -64,12 +64,12 @@ describe("command parser", () => {
 
 describe("mention detection", () => {
   it("detects valid mentions", () => {
-    expect(hasCodeduckMention("hello @codeduck")).toBe(true);
-    expect(hasCodeduckMention("hello @codeduck[bot]")).toBe(true);
+    expect(hasCodeDuckMention("hello @codeduck")).toBe(true);
+    expect(hasCodeDuckMention("hello @codeduck[bot]")).toBe(true);
   });
 
   it("does not match partial words", () => {
-    expect(hasCodeduckMention("hello @codeduckish")).toBe(false);
+    expect(hasCodeDuckMention("hello @codeduckish")).toBe(false);
   });
 });
 
