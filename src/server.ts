@@ -191,7 +191,7 @@ async function processCommand(
 
     // Execute based on mode
     console.log(`[SERVER] Calling executeSessionQuery...`);
-    const result = await executeSessionQuery(context, prompt, parsed.mode);
+    const result = await executeSessionQuery(context, prompt, parsed.mode, parsed.provider);
     console.log(`[SERVER] executeSessionQuery returned, success: ${result.success}`);
 
     if (result.success) {
@@ -325,7 +325,8 @@ Provide help about using CodeDuck. Available commands:
 - @codeduck explain [target] - Explain code or concepts
 - @codeduck implement [description] - Implement a feature or fix
 - @codeduck fix [description] - Fix a bug
-- @codeduck help - Show this help message`;
+- @codeduck help - Show this help message
+- Optional: add \`--provider=claude|codex\` to select the AI backend`;
 
     default:
       return `${baseContext}

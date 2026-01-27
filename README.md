@@ -1,6 +1,6 @@
 # CodeDuck
 
-Inspired by Psyduck, CodeDuck is a GitHub bot that helps you with your repositories using AI. Powered by MiniMax M2.1 via the Claude Agent SDK.
+Inspired by Psyduck, CodeDuck is a GitHub bot that helps you with your repositories using AI. Powered by MiniMax M2.1 via the Claude Agent SDK by default, with optional Codex SDK support.
 
 ## Features
 
@@ -10,6 +10,7 @@ Inspired by Psyduck, CodeDuck is a GitHub bot that helps you with your repositor
 - **Implement Mode** - Fix bugs, add features, create branches and PRs
 - **Comment Polling** - Detects stop/cancel commands during processing
 - **MiniMax M2.1** - Uses Anthropic-compatible API endpoint
+- **Multi-provider** - Swap between Claude Agent SDK and Codex SDK
 
 ## Commands
 
@@ -18,6 +19,9 @@ Inspired by Psyduck, CodeDuck is a GitHub bot that helps you with your repositor
 - `@codeduck review this PR` - Review code changes
 - `@codeduck explain the bug` - Explain an issue in detail
 - `@codeduck help` - Show available commands
+
+Optional provider override:
+- `@codeduck review this PR --provider=codex`
 
 ### Implementation Commands
 - `@codeduck fix the bug` - Implement a fix
@@ -38,8 +42,8 @@ Inspired by Psyduck, CodeDuck is a GitHub bot that helps you with your repositor
 
 ```bash
 # Clone the repository
-git clone https://github.com/rudrankriyam/CodeDuck.git
-cd CodeDuck
+git clone https://github.com/rudrankriyam/Clauduck.git
+cd Clauduck
 
 # Install dependencies
 npm install
@@ -55,6 +59,14 @@ cp .env.example .env
 ```env
 # MiniMax API (Anthropic-compatible endpoint)
 MINIMAX_API_KEY=your-minimax-api-key
+
+# Provider selection (claude | codex)
+AI_PROVIDER=claude
+
+# Codex SDK
+CODEX_API_KEY=your-codex-api-key
+# Optional: override Codex/OpenAI base URL
+OPENAI_BASE_URL=
 
 # GitHub Token (for development/testing)
 GITHUB_TOKEN=your-github-token
@@ -88,8 +100,8 @@ Create the GitHub App using the `gh` CLI:
 ```bash
 # Create the GitHub App
 gh api apps/create \
-  -f name="codeduck" \
-  -f url="https://github.com/rudrankriyam/CodeDuck" \
+  -f name="clauduck" \
+  -f url="https://github.com/rudrankriyam/Clauduck" \
   -f webhook_active="true" \
   -f webhook_url="https://your-ngrok.io/webhook" \
   -f webhook_secret="your-webhook-secret" \
@@ -119,7 +131,7 @@ Copy the key content to `GITHUB_APP_PRIVATE_KEY` in `.env` (escape newlines: `ca
 ## Project Structure
 
 ```
-codeduck/
+clauduck/
 ├── src/
 │   ├── index.ts              # Entry point
 │   ├── server.ts             # Express webhook server
@@ -144,7 +156,7 @@ codeduck/
 ## How It Works
 
 1. **Webhook Received** - GitHub sends an event to your server
-2. **Command Parsed** - Extract `@codeduck` command from comment
+2. **Command Parsed** - Extract `@clauduck` command from comment
 3. **Mode Determined** - Read-only or Implementation mode
 4. **Claude Agent Runs** - MiniMax M2.1 processes the request
 5. **Response Posted** - Results posted as a comment
