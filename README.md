@@ -1,11 +1,11 @@
-# Clauduck
+# CodeDuck
 
-Inspired by Psyduck, Clauduck is a GitHub bot that helps you with your repositories using AI. Powered by MiniMax M2.1 via the Claude Agent SDK.
+Inspired by Psyduck, CodeDuck is a GitHub bot that helps you with your repositories using AI. Powered by MiniMax M2.1 via the Claude Agent SDK.
 
 ## Features
 
 - **GitHub App Integration** - Receives webhooks for issues, PRs, and comments
-- **Command Parsing** - Understands `@clauduck` commands
+- **Command Parsing** - Understands `@codeduck` commands
 - **Read Mode** - Summarize, review, explain issues and PRs
 - **Implement Mode** - Fix bugs, add features, create branches and PRs
 - **Comment Polling** - Detects stop/cancel commands during processing
@@ -14,16 +14,16 @@ Inspired by Psyduck, Clauduck is a GitHub bot that helps you with your repositor
 ## Commands
 
 ### Read-Only Commands
-- `@clauduck summarize this` - Summarize an issue or PR
-- `@clauduck review this PR` - Review code changes
-- `@clauduck explain the bug` - Explain an issue in detail
-- `@clauduck help` - Show available commands
+- `@codeduck summarize this` - Summarize an issue or PR
+- `@codeduck review this PR` - Review code changes
+- `@codeduck explain the bug` - Explain an issue in detail
+- `@codeduck help` - Show available commands
 
 ### Implementation Commands
-- `@clauduck fix the bug` - Implement a fix
-- `@clauduck add new feature` - Add new functionality
-- `@clauduck implement feature` - Implement a feature request
-- `@clauduck refactor code` - Refactor existing code
+- `@codeduck fix the bug` - Implement a fix
+- `@codeduck add new feature` - Add new functionality
+- `@codeduck implement feature` - Implement a feature request
+- `@codeduck refactor code` - Refactor existing code
 
 ## Setup
 
@@ -38,8 +38,8 @@ Inspired by Psyduck, Clauduck is a GitHub bot that helps you with your repositor
 
 ```bash
 # Clone the repository
-git clone https://github.com/rudrankriyam/Clauduck.git
-cd Clauduck
+git clone https://github.com/rudrankriyam/CodeDuck.git
+cd CodeDuck
 
 # Install dependencies
 npm install
@@ -88,8 +88,8 @@ Create the GitHub App using the `gh` CLI:
 ```bash
 # Create the GitHub App
 gh api apps/create \
-  -f name="clauduck" \
-  -f url="https://github.com/rudrankriyam/Clauduck" \
+  -f name="codeduck" \
+  -f url="https://github.com/rudrankriyam/CodeDuck" \
   -f webhook_active="true" \
   -f webhook_url="https://your-ngrok.io/webhook" \
   -f webhook_secret="your-webhook-secret" \
@@ -119,7 +119,7 @@ Copy the key content to `GITHUB_APP_PRIVATE_KEY` in `.env` (escape newlines: `ca
 ## Project Structure
 
 ```
-clauduck/
+codeduck/
 ├── src/
 │   ├── index.ts              # Entry point
 │   ├── server.ts             # Express webhook server
@@ -144,7 +144,7 @@ clauduck/
 ## How It Works
 
 1. **Webhook Received** - GitHub sends an event to your server
-2. **Command Parsed** - Extract `@clauduck` command from comment
+2. **Command Parsed** - Extract `@codeduck` command from comment
 3. **Mode Determined** - Read-only or Implementation mode
 4. **Claude Agent Runs** - MiniMax M2.1 processes the request
 5. **Response Posted** - Results posted as a comment

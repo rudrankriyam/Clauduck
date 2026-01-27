@@ -1,5 +1,5 @@
 /**
- * Clauduck - GitHub API Client
+ * CodeDuck - GitHub API Client
  *
  * Octokit-based client for GitHub API operations
  */
@@ -15,7 +15,7 @@ export function createOctokit(token: string): Octokit {
   }
   return new Octokit({
     auth: token,
-    userAgent: "Clauduck/1.0",
+    userAgent: "CodeDuck/1.0",
   });
 }
 

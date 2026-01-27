@@ -1,5 +1,5 @@
 /**
- * Clauduck - Claude Agent SDK Integration (V2 Session API)
+ * CodeDuck - Claude Agent SDK Integration (V2 Session API)
  *
  * Uses unstable_v2_* session-based API for better multi-turn context
  * Sessions are persisted to disk for recovery after restart
@@ -17,7 +17,7 @@ import { SessionStore, type SessionInfo } from "./session-store.js";
 /**
  * Session storage directory
  */
-const SESSION_DIR = process.env.SESSION_DIR || "/tmp/clauduck-sessions";
+const SESSION_DIR = process.env.SESSION_DIR || "/tmp/codeduck-sessions";
 
 /**
  * Session key for tracking sessions per issue/PR
@@ -88,7 +88,7 @@ SECURITY:
 
   switch (mode) {
     case "read":
-      return `You are Clauduck, an AI assistant for GitHub repositories.
+      return `You are CodeDuck, an AI assistant for GitHub repositories.
 
 Your role is to analyze and explain code, issues, and pull requests.${bashWarning}
 
@@ -111,7 +111,7 @@ When answering questions:
 - If unsure, explain what you found and what you couldn't determine`;
 
     case "write":
-      return `You are Clauduck, an AI contributor that helps implement changes.${bashWarning}
+      return `You are CodeDuck, an AI contributor that helps implement changes.${bashWarning}
 
 WORKFLOW:
 1. EXPLORE - Understand the codebase structure and existing patterns
@@ -129,7 +129,7 @@ Guidelines:
 Stop when the task is complete - don't over-engineer`;
 
     default:
-      return "You are Clauduck, a helpful AI assistant.";
+      return "You are CodeDuck, a helpful AI assistant.";
   }
 }
 

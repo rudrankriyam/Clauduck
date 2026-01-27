@@ -1,5 +1,5 @@
 /**
- * Clauduck - GitHub App Authentication
+ * CodeDuck - GitHub App Authentication
  *
  * Handles GitHub App JWT creation and installation token generation
  */
@@ -48,7 +48,7 @@ export async function getInstallationOctokit(
 
   return new Octokit({
     auth: token,
-    userAgent: "Clauduck/1.0",
+    userAgent: "CodeDuck/1.0",
   });
 }
 
@@ -82,7 +82,7 @@ export async function getAuthOctokit(
 
   const octokit = new Octokit({
     auth: token,
-    userAgent: "Clauduck/1.0",
+    userAgent: "CodeDuck/1.0",
   });
 
   return { octokit, installationId, token };

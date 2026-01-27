@@ -1,5 +1,5 @@
 /**
- * Clauduck - GitHub Bot with Claude Agent SDK
+ * CodeDuck - GitHub Bot with Claude Agent SDK
  *
  * Express server with webhook handlers for GitHub events
  * Uses GitHub App for per-repository installation tokens
@@ -144,7 +144,7 @@ function sanitizeError(message: string): string {
 }
 
 /**
- * Process a @clauduck command and post result back to GitHub
+ * Process a @codeduck command and post result back to GitHub
  */
 async function processCommand(
   context: GitHubContext,
@@ -170,7 +170,7 @@ async function processCommand(
       context.owner,
       context.repo,
       context.issueNumber,
-      "Clauduck is processing your request..."
+      "CodeDuck is processing your request..."
     );
 
     // Parse command
@@ -181,7 +181,7 @@ async function processCommand(
         context.owner,
         context.repo,
         context.issueNumber,
-        "I couldn't parse your command. Try `@clauduck help` for available commands."
+        "I couldn't parse your command. Try `@codeduck help` for available commands."
       );
       return;
     }
@@ -319,13 +319,13 @@ When done, your changes will be committed and a PR will be created.`;
     case "help":
       return `${baseContext}
 
-Provide help about using Clauduck. Available commands:
-- @clauduck summarize [target] - Summarize code or repository
-- @clauduck review [target] - Review code for issues
-- @clauduck explain [target] - Explain code or concepts
-- @clauduck implement [description] - Implement a feature or fix
-- @clauduck fix [description] - Fix a bug
-- @clauduck help - Show this help message`;
+Provide help about using CodeDuck. Available commands:
+- @codeduck summarize [target] - Summarize code or repository
+- @codeduck review [target] - Review code for issues
+- @codeduck explain [target] - Explain code or concepts
+- @codeduck implement [description] - Implement a feature or fix
+- @codeduck fix [description] - Fix a bug
+- @codeduck help - Show this help message`;
 
     default:
       return `${baseContext}
@@ -367,7 +367,7 @@ app.use(express.json());
  */
 app.get("/", (_req: Request, res: Response) => {
   res.json({
-    name: "Clauduck",
+    name: "CodeDuck",
     status: "running",
     version: "1.0.0",
     githubApp: isGitHubAppConfigured(),
@@ -480,9 +480,9 @@ async function handleIssueComment(payload: {
     comment.id
   );
 
-  const mentionPattern = /@clauduck(?:\[[a-z]+\])?(?![\w-])/gi;
+  const mentionPattern = /@codeduck(?:\[[a-z]+\])?(?![\w-])/gi;
   if (mentionPattern.test(comment.body)) {
-    console.log(`Found @clauduck mention in issue #${issue.number}`);
+    console.log(`Found @codeduck mention in issue #${issue.number}`);
 
     const commandText = comment.body.replace(mentionPattern, "").trim();
     console.log(`[WEBHOOK] Command: "${commandText}"`);
@@ -496,7 +496,7 @@ async function handleIssueComment(payload: {
     await processCommand(context, commandText, payload);
     console.log(`[WEBHOOK] processCommand returned`);
   } else {
-    console.log(`[WEBHOOK] No @clauduck mention found`);
+    console.log(`[WEBHOOK] No @codeduck mention found`);
   }
 }
 
@@ -524,7 +524,7 @@ async function handleIssueOpened(payload: {
       repository.owner.login,
       repository.name,
       issue.number,
-      `Hi! I'm Clauduck, an AI assistant for this repository.
+      `Hi! I'm CodeDuck, an AI assistant for this repository.
 
 I can help you with:
 - **Summarize**: Explain the codebase or specific files
@@ -532,7 +532,7 @@ I can help you with:
 - **Explain**: Break down code or concepts
 - **Implement**: Help implement features or fixes
 
-Just @mention me with a command, e.g., \`@clauduck summarize the project structure\``
+Just @mention me with a command, e.g., \`@codeduck summarize the project structure\``
     );
   } catch (error) {
     console.error("Error posting greeting:", error);
@@ -563,9 +563,9 @@ async function handlePROpened(payload: {
       repository.owner.login,
       repository.name,
       pull_request.number,
-      `Hi! I'm Clauduck, an AI assistant for this repository.
+      `Hi! I'm CodeDuck, an AI assistant for this repository.
 
-I can help you review this PR. Just @mention me with \`@clauduck review\` and I'll analyze the changes.`
+I can help you review this PR. Just @mention me with \`@codeduck review\` and I'll analyze the changes.`
     );
   } catch (error) {
     console.error("Error posting PR greeting:", error);
@@ -592,7 +592,7 @@ export function startServer(): void {
 
   const port = parseInt(PORT.toString(), 10);
   app.listen(port, () => {
-    console.log(`=== Clauduck ===`);
+    console.log(`=== CodeDuck ===`);
     console.log(`Server running on http://localhost:${port}`);
     console.log(`Webhook endpoint: http://localhost:${port}/webhook`);
     console.log(`GitHub App: ${isGitHubAppConfigured() ? "configured" : "not configured (using PAT)"}`);

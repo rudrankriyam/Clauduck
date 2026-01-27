@@ -1,14 +1,14 @@
 /**
- * Clauduck - Type Definitions
+ * CodeDuck - Type Definitions
  */
 
 /**
- * Command types for Clauduck
+ * Command types for CodeDuck
  */
 export type CommandMode = "read" | "write";
 
 /**
- * Parsed command from @clauduck mention
+ * Parsed command from @codeduck mention
  */
 export interface ParsedCommand {
   mode: CommandMode;

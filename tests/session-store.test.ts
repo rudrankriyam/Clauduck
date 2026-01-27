@@ -11,7 +11,7 @@ const silentLogger = {
 };
 
 function makeTempDir() {
-  return mkdtempSync(join(tmpdir(), "clauduck-session-store-"));
+  return mkdtempSync(join(tmpdir(), "codeduck-session-store-"));
 }
 
 const baseContext = {

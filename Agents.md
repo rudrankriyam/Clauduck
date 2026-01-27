@@ -18,7 +18,7 @@ npx @anthropic-ai/codex-cli review  # Run Codex security/code review
 
 ## Architecture
 
-Clauduck is a GitHub bot that responds to `@clauduck` mentions using MiniMax M2.1 via the Claude Agent SDK V2 session API.
+CodeDuck is a GitHub bot that responds to `@codeduck` mentions using MiniMax M2.1 via the Claude Agent SDK V2 session API.
 
 ### V2 Session API Usage
 
@@ -38,7 +38,7 @@ for await (const message of session.stream()) {
 }
 ```
 
-Sessions are persisted to disk in `/tmp/clauduck-sessions` (configurable via `SESSION_DIR` env var) per `${owner}/${repo}#${issueNumber}`. Loaded on startup with 24-hour TTL. Use `clearSession(context)` to reset.
+Sessions are persisted to disk in `/tmp/codeduck-sessions` (configurable via `SESSION_DIR` env var) per `${owner}/${repo}#${issueNumber}`. Loaded on startup with 24-hour TTL. Use `clearSession(context)` to reset.
 
 ### Security
 
@@ -56,7 +56,7 @@ Required environment variables:
 - `GITHUB_APP_PRIVATE_KEY` - GitHub App private key (PEM format, newlines escaped)
 - `GITHUB_APP_WEBHOOK_SECRET` - GitHub App webhook secret
 - `PORT` - Server port (default: 3000)
-- `SESSION_DIR` - Session storage directory (default: `/tmp/clauduck-sessions`)
+- `SESSION_DIR` - Session storage directory (default: `/tmp/codeduck-sessions`)
 - `NODE_ENV` - Set to "development" to skip webhook verification (not recommended for production)
 
 **Required:** GitHub App configuration (PAT mode not supported):
@@ -88,16 +88,16 @@ Commits follow Conventional Commits: `feat:`, `fix:`, `refactor:` prefixes. PRs 
 
 ### Available Commands
 
-- `@clauduck summarize [target]` - Summarize code or repository
-- `@clauduck review [target]` - Review code for issues
-- `@clauduck explain [target]` - Explain code or concepts
-- `@clauduck implement [description]` - Implement a feature or fix
-- `@clauduck fix [description]` - Fix a bug
-- `@clauduck help` - Show help message
+- `@codeduck summarize [target]` - Summarize code or repository
+- `@codeduck review [target]` - Review code for issues
+- `@codeduck explain [target]` - Explain code or concepts
+- `@codeduck implement [description]` - Implement a feature or fix
+- `@codeduck fix [description]` - Fix a bug
+- `@codeduck help` - Show help message
 
 ### Session Management
 
 - Sessions persist per issue/PR for multi-turn context
 - Use `stop`, `cancel`, `abort` to clear session
 - Sessions persisted to disk with 24-hour TTL, survive bot restarts
-- Storage directory: `/tmp/clauduck-sessions` (configurable via `SESSION_DIR`)
+- Storage directory: `/tmp/codeduck-sessions` (configurable via `SESSION_DIR`)

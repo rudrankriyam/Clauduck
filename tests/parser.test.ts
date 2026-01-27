@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   parseCommand,
-  hasClauduckMention,
+  hasCodeduckMention,
   extractCommand,
   getModeDescription,
   isStopCommand,
@@ -9,7 +9,7 @@ import {
 
 describe("command parser", () => {
   it("parses summarize command", () => {
-    const result = parseCommand("@clauduck summarize this");
+    const result = parseCommand("@codeduck summarize this");
     expect(result).not.toBeNull();
     expect(result?.action).toBe("summarize");
     expect(result?.target).toBe("this");
@@ -17,7 +17,7 @@ describe("command parser", () => {
   });
 
   it("parses review command with empty target", () => {
-    const result = parseCommand("@clauduck review");
+    const result = parseCommand("@codeduck review");
     expect(result).not.toBeNull();
     expect(result?.action).toBe("review");
     expect(result?.target).toBe("");
@@ -25,7 +25,7 @@ describe("command parser", () => {
   });
 
   it("parses write-mode command", () => {
-    const result = parseCommand("@clauduck fix the auth bug");
+    const result = parseCommand("@codeduck fix the auth bug");
     expect(result).not.toBeNull();
     expect(result?.action).toBe("fix");
     expect(result?.target).toBe("the auth bug");
@@ -33,7 +33,7 @@ describe("command parser", () => {
   });
 
   it("handles [bot] mention", () => {
-    const result = parseCommand("@clauduck[bot] explain rate limiter");
+    const result = parseCommand("@codeduck[bot] explain rate limiter");
     expect(result).not.toBeNull();
     expect(result?.action).toBe("explain");
     expect(result?.target).toBe("rate limiter");
@@ -41,25 +41,25 @@ describe("command parser", () => {
   });
 
   it("returns null when only mention exists", () => {
-    const result = parseCommand("@clauduck");
+    const result = parseCommand("@codeduck");
     expect(result).toBeNull();
   });
 });
 
 describe("mention detection", () => {
   it("detects valid mentions", () => {
-    expect(hasClauduckMention("hello @clauduck")).toBe(true);
-    expect(hasClauduckMention("hello @clauduck[bot]")).toBe(true);
+    expect(hasCodeduckMention("hello @codeduck")).toBe(true);
+    expect(hasCodeduckMention("hello @codeduck[bot]")).toBe(true);
   });
 
   it("does not match partial words", () => {
-    expect(hasClauduckMention("hello @clauduckish")).toBe(false);
+    expect(hasCodeduckMention("hello @codeduckish")).toBe(false);
   });
 });
 
 describe("command extraction", () => {
   it("extracts command text after mention", () => {
-    expect(extractCommand("@clauduck review this")).toBe("review this");
+    expect(extractCommand("@codeduck review this")).toBe("review this");
   });
 });
 

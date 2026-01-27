@@ -1,5 +1,5 @@
 /**
- * Clauduck - GitHub Bot with Claude Agent SDK
+ * CodeDuck - GitHub Bot with Claude Agent SDK
  *
  * Entry point for the application
  */
