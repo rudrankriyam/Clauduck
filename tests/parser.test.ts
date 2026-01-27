@@ -41,7 +41,7 @@ describe("command parser", () => {
   });
 
   it("parses provider flag with equals syntax", () => {
-    const result = parseCommand("@clauduck review --provider=codex");
+    const result = parseCommand("@codeduck review --provider=codex");
     expect(result).not.toBeNull();
     expect(result?.action).toBe("review");
     expect(result?.target).toBe("");
@@ -49,7 +49,7 @@ describe("command parser", () => {
   });
 
   it("parses provider flag with space syntax", () => {
-    const result = parseCommand("@clauduck fix flaky test --provider claude");
+    const result = parseCommand("@codeduck fix flaky test --provider claude");
     expect(result).not.toBeNull();
     expect(result?.action).toBe("fix");
     expect(result?.target).toBe("flaky test");
